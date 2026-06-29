@@ -1,0 +1,1990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Knowledge OS</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0;padding:0;background:#0a0b0f">
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+// ── Smart Storage — auto-detects environment ──────────────────────────────────
+// Inside Claude.ai  → window.storage (Claude Project storage)
+// Outside Claude    → Google Apps Script → KnowledgeOS/data.json in Google Drive
+// Fallback          → localStorage (if Drive fails outside Claude)
+
+const GAS_URL = "https://script.google.com/macros/s/AKfycbyZhNLRgADIyow5jbl7DeYk8ewjN8tiKNd6_JMeU6RlvJD2YEZrP_ZCZJ8HyT74tbIB/exec";
+
+const IS_CLAUDE = (() => {
+  try { return typeof window.storage !== "undefined" && typeof window.storage.get === "function"; }
+  catch { return false; }
+})();
+
+// Google Drive via Apps Script
+const gdrive = {
+  // JSONP load — bypasses CORS for GET
+  async load() {
+    return new Promise((resolve) => {
+      const cbName = "__kos_cb_" + Date.now();
+      const script = document.createElement("script");
+      const timer = setTimeout(() => { cleanup(); resolve(null); }, 10000);
+      const cleanup = () => { clearTimeout(timer); delete window[cbName]; try { script.remove(); } catch {} };
+      window[cbName] = (data) => { cleanup(); resolve(data?.tree ? data : null); };
+      script.src = GAS_URL + "?callback=" + cbName + "&t=" + Date.now();
+      script.onerror = () => { cleanup(); resolve(null); };
+      document.head.appendChild(script);
+    });
+  },
+
+  // Save via direct fetch POST — works on all browsers including mobile
+  async save(data) {
+    try {
+      const json = JSON.stringify(data);
+      // Try direct fetch first
+      const res = await fetch(GAS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ json }),
+      });
+      const text = await res.text();
+      return text === "OK" || text.includes("ok");
+    } catch (e) {
+      // Fallback: no-cors (fire and forget)
+      try {
+        await fetch(GAS_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain" },
+          body: JSON.stringify({ json: JSON.stringify(data) }),
+        });
+        return true;
+      } catch { return false; }
+    }
+  }
+};
+
+// Claude window.storage
+const claudeStorage = {
+  async load(key) {
+    try { const r = await window.storage.get(key); return r ? JSON.parse(r.value) : null; } catch { return null; }
+  },
+  async set(key, val) {
+    try { await window.storage.set(key, JSON.stringify(val)); } catch {}
+  }
+};
+
+// localStorage fallback (outside Claude when Drive fails)
+const localStore = {
+  load(key) { try { const d = localStorage.getItem(key); return d ? JSON.parse(d) : null; } catch { return null; } },
+  set(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }
+};
+
+// Unified cache
+const localCache = {
+  async load(key) { return IS_CLAUDE ? claudeStorage.load(key) : localStore.load(key); },
+  async set(key, val) { IS_CLAUDE ? claudeStorage.set(key, val) : localStore.set(key, val); }
+};
+
+// ── Icons ─────────────────────────────────────────────────────────────────────
+const Icon = ({ d, size = 18, stroke = "currentColor", fill = "none", strokeWidth = 1.8 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+    {Array.isArray(d) ? d.map((p, i) => <path key={i} d={p} />) : <path d={d} />}
+  </svg>
+);
+
+const ic = {
+  dashboard: "M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z",
+  knowledge: "M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 016.5 22H20V2H6.5A2.5 2.5 0 004 4.5v15z",
+  ai: "M12 2a10 10 0 100 20A10 10 0 0012 2zm0 0v20M2 12h20",
+  search: "M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z",
+  star: "M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z",
+  recent: "M12 22a10 10 0 100-20 10 10 0 000 20zm0-10V7m0 5l3 3",
+  calendar: "M3 4h18v18H3V4zm15-2v4M6 2v4M3 10h18",
+  export: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12",
+  settings: "M12 15a3 3 0 100-6 3 3 0 000 6zm0 0V21m0-18v3M4.22 10.22l2.12 2.12M1 12h3m17 0h-3M19.78 10.22l-2.12 2.12M4.22 13.78l2.12-2.12M19.78 13.78l-2.12-2.12",
+  folder: "M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z",
+  folderOpen: "M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2v1H2m0 0h20",
+  file: "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z",
+  chevronRight: "M9 18l6-6-6-6",
+  plus: "M12 5v14M5 12h14",
+  close: "M18 6L6 18M6 6l12 12",
+  menu: "M3 12h18M3 6h18M3 18h18",
+  trash: "M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2",
+  edit: "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7m-1.5-9.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z",
+  send: "M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z",
+  sparkle: "M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 3z",
+  brain: "M9.5 2A2.5 2.5 0 017 4.5v0A2.5 2.5 0 014.5 7H4a2 2 0 00-2 2v0a2 2 0 002 2h.5A2.5 2.5 0 017 13.5v0A2.5 2.5 0 009.5 16H10v2a2 2 0 004 0v-2h.5A2.5 2.5 0 0117 13.5v0A2.5 2.5 0 0119.5 11H20a2 2 0 002-2v0a2 2 0 00-2-2h-.5A2.5 2.5 0 0117 4.5v0A2.5 2.5 0 0014.5 2h-1a2 2 0 00-2 2v0a2 2 0 00-2-2H9.5z",
+  eye: "M1 12S5 4 12 4s11 8 11 8-4 8-11 8S1 12 1 12zm11 0a3 3 0 100-6 3 3 0 000 6z",
+  clock: "M12 22a10 10 0 100-20 10 10 0 000 20zm0-10V7m0 5l3 3",
+  check: "M20 6L9 17l-5-5",
+  pin: "M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z",
+  archive: "M21 8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z",
+  book: "M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 016.5 22H20V2H6.5A2.5 2.5 0 004 4.5v15z",
+  zap: "M13 2L3 14h9l-1 8 10-12h-9l1-8z",
+  tag: "M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82zM7 7h.01",
+  info: "M12 22a10 10 0 100-20 10 10 0 000 20zm0-7v-4m0-4h.01",
+  copy: "M20 9h-9a2 2 0 00-2 2v9a2 2 0 002 2h9a2 2 0 002-2v-9a2 2 0 00-2-2zM5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1",
+  refresh: "M23 4v6h-6M1 20v-6h6m15.5-3A9 9 0 006.4 6.4L1 12m22 0l-5.4 5.6A9 9 0 011.5 13",
+  folderPlus: "M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2zM12 11v6M9 14h6",
+  download: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3",
+};
+
+// ── Seed data ─────────────────────────────────────────────────────────────────
+const SEED_TREE = [
+  { id:"sap", label:"SAP", type:"folder", expanded:true, children:[
+    { id:"fico", label:"FICO", type:"folder", expanded:true, children:[
+      { id:"org", label:"Organization Structure", type:"folder", expanded:false, children:[
+        { id:"company", label:"Company", type:"note", tags:["finance","SAP"], kosKey:"#KOS-SAP001" },
+        { id:"compcode", label:"Company Code", type:"note", tags:["finance"], kosKey:"#KOS-SAP002" },
+        { id:"bizarea", label:"Business Area", type:"note", tags:["org"], kosKey:"#KOS-SAP003" },
+      ]},
+      { id:"gl", label:"General Ledger", type:"folder", expanded:false, children:[
+        { id:"gl-basics", label:"GL Basics", type:"note", tags:["GL","finance"], kosKey:"#KOS-GL001" },
+      ]},
+      { id:"ap", label:"Accounts Payable", type:"folder", expanded:false, children:[] },
+      { id:"ar", label:"Accounts Receivable", type:"folder", expanded:false, children:[] },
+    ]},
+  ]},
+  { id:"aiml", label:"AI & Machine Learning", type:"folder", expanded:false, children:[
+    { id:"llm-arch", label:"LLM Architecture", type:"note", tags:["AI","deep-learning"], kosKey:"#KOS-AI001" },
+    { id:"rag", label:"RAG", type:"note", tags:["AI","retrieval"], kosKey:"#KOS-AI002" },
+    { id:"agents", label:"Agents", type:"note", tags:["AI","automation"], kosKey:"#KOS-AI003" },
+  ]},
+  { id:"python", label:"Python", type:"folder", expanded:false, children:[
+    { id:"py-basics", label:"Basics", type:"note", tags:["python"], kosKey:"#KOS-PY002" },
+    { id:"fastapi", label:"FastAPI", type:"note", tags:["python","web"], kosKey:"#KOS-PY001" },
+    { id:"streamlit", label:"Streamlit", type:"note", tags:["python","data"], kosKey:"#KOS-PY003" },
+  ]},
+  { id:"erpnext", label:"ERPNext", type:"folder", expanded:false, children:[
+    { id:"erpnext-intro", label:"Introduction", type:"note", tags:["ERP"], kosKey:"#KOS-ERP001" },
+  ]},
+  { id:"career", label:"Career", type:"folder", expanded:false, children:[
+    { id:"career-goals", label:"Goals 2025", type:"note", tags:["career"], kosKey:"#KOS-CAR001" },
+  ]},
+  { id:"business", label:"Business", type:"folder", expanded:false, children:[] },
+  { id:"personal", label:"Personal", type:"folder", expanded:false, children:[] },
+];
+
+const SEED_NOTES = {
+  company: { title:"Company", kosKey:"#KOS-SAP001", content:"# Company\n\nIn SAP, a **Company** is the highest organizational unit in Financial Accounting.\n\n## Key Points\n- Represents a legal entity\n- Has its own set of accounts\n- Required for consolidation\n- Linked to one or more Company Codes\n\n## Configuration\n```\nTransaction: OX15\nPath: Enterprise Structure > Definition > Financial Accounting > Define Company\n```\n\n> A company can have multiple company codes, but each company code belongs to exactly one company.", tags:["finance","SAP"], created:"2025-03-01", updated:"2025-06-10", wordCount:87, pinned:false, color:"", archived:false },
+  compcode: { title:"Company Code", kosKey:"#KOS-SAP002", content:"# Company Code\n\nA **Company Code** is the smallest organizational unit for which a complete self-contained set of accounts can be drawn up.\n\n## Key Points\n- 4-character alphanumeric key\n- Assigned to exactly one Company\n- Has its own chart of accounts\n\n## Transaction\n```\nOX02 - Create Company Code\n```", tags:["finance"], created:"2025-03-05", updated:"2025-06-10", wordCount:65, pinned:false, color:"", archived:false },
+  "llm-arch": { title:"LLM Architecture Overview", kosKey:"#KOS-AI001", content:"# LLM Architecture Overview\n\nLarge Language Models are transformer-based neural networks trained on massive text corpora.\n\n## Transformer Architecture\n- **Attention Mechanism** — Self-attention allows the model to weigh token relationships\n- **Feed-Forward Layers** — Dense layers after attention\n- **Layer Normalization** — Stabilizes training\n\n## Key Models\n| Model | Params | Context |\n|-------|--------|--------|\n| GPT-4 | ~1.8T | 128k |\n| Claude | Unknown | 200k |\n| Llama 3 | 70B | 128k |\n\n## Training Stages\n1. Pre-training on raw text\n2. Supervised fine-tuning (SFT)\n3. RLHF / DPO alignment", tags:["AI","deep-learning"], created:"2025-04-20", updated:"2025-06-15", wordCount:124, pinned:true, color:"", archived:false },
+  rag: { title:"Retrieval Augmented Generation", kosKey:"#KOS-AI002", content:"# RAG\n\n**Retrieval Augmented Generation** combines LLMs with external knowledge retrieval to reduce hallucinations.\n\n## Pipeline\n```\nQuery → Embed → Vector Search → Retrieve Chunks → Augment Prompt → LLM → Answer\n```\n\n## Components\n- **Vector Store** — Chroma, Pinecone, Weaviate\n- **Embeddings** — text-embedding-ada-002, BGE, E5\n- **Chunking Strategy** — Fixed, semantic, recursive\n- **Retrieval** — Cosine similarity, MMR, hybrid BM25", tags:["AI","retrieval"], created:"2025-05-01", updated:"2025-06-20", wordCount:96, pinned:false, color:"#CCE5FF", archived:false },
+  fastapi: { title:"FastAPI", kosKey:"#KOS-PY001", content:"# FastAPI\n\nFastAPI is a modern, fast web framework for building APIs with Python 3.7+.\n\n## Hello World\n```python\nfrom fastapi import FastAPI\napp = FastAPI()\n\n@app.get('/')\ndef read_root():\n    return {'Hello': 'World'}\n```\n\n## Key Features\n- Automatic OpenAPI docs\n- Type hints → validation\n- Async support\n- Dependency injection\n- Background tasks", tags:["python","web"], created:"2025-02-14", updated:"2025-06-18", wordCount:78, pinned:false, color:"", archived:false },
+  "career-goals": { title:"Goals 2025", kosKey:"#KOS-CAR001", content:"# Goals 2025\n\n## SAP\n- Complete SAP FICO certification\n- Build 3 end-to-end projects\n\n## AI / ML\n- Build a RAG application\n- Learn LangChain and LlamaIndex\n\n## Python\n- Master FastAPI\n- Build a Streamlit dashboard\n\n## Personal\n- Read 12 books\n- Exercise daily", tags:["career","planning"], created:"2025-01-01", updated:"2025-06-01", wordCount:72, pinned:true, color:"#D4EDDA", archived:false },
+};
+
+// ── Tree utilities ────────────────────────────────────────────────────────────
+const flattenTree = (nodes, path = []) => {
+  const r = [];
+  for (const n of nodes) {
+    r.push({ ...n, path });
+    if (n.children) r.push(...flattenTree(n.children, [...path, n.label]));
+  }
+  return r;
+};
+const findNode = (nodes, id) => { for (const n of nodes) { if (n.id === id) return n; if (n.children) { const f = findNode(n.children, id); if (f) return f; } } return null; };
+const toggleExpand = (nodes, id) => nodes.map(n => { if (n.id === id) return { ...n, expanded: !n.expanded }; if (n.children) return { ...n, children: toggleExpand(n.children, id) }; return n; });
+const addToFolder = (nodes, fid, item) => nodes.map(n => { if (n.id === fid) return { ...n, expanded: true, children: [...(n.children || []), item] }; if (n.children) return { ...n, children: addToFolder(n.children, fid, item) }; return n; });
+const removeFromTree = (nodes, id) => nodes.map(n => ({ ...n, children: n.children ? removeFromTree(n.children.filter(c => c.id !== id), id) : undefined })).filter(n => n.id !== id);
+const updateTreeLabel = (nodes, id, label) => nodes.map(n => { if (n.id === id) return { ...n, label }; if (n.children) return { ...n, children: updateTreeLabel(n.children, id, label) }; return n; });
+
+// Extract a node and return [extracted node, remaining tree]
+// Remove a node by id from anywhere in the tree, return [extracted, newTree]
+const extractNode = (nodes, id) => {
+  let extracted = null;
+  const remaining = nodes.reduce((acc, n) => {
+    if (n.id === id) { extracted = n; return acc; } // skip = extract
+    if (n.children) {
+      const [ex, kids] = extractNode(n.children, id);
+      if (ex) extracted = ex;
+      acc.push({ ...n, children: kids });
+    } else {
+      acc.push(n);
+    }
+    return acc;
+  }, []);
+  return [extracted, remaining];
+};
+
+// Move dragId node into targetFolderId folder
+const moveNode = (nodes, dragId, targetFolderId) => {
+  const [node, trimmed] = extractNode(nodes, dragId);
+  if (!node) return nodes;
+  if (!targetFolderId) return [...trimmed, node];
+  // Insert into target folder
+  const insertInto = (ns) => ns.map(n => {
+    if (n.id === targetFolderId) {
+      return { ...n, expanded: true, children: [...(n.children || []), node] };
+    }
+    if (n.children) return { ...n, children: insertInto(n.children) };
+    return n;
+  });
+  return insertInto(trimmed);
+};
+
+// ── Smart KOS Key generator ──────────────────────────────────────────────────
+const generateKosKey = (title, tree, folderId) => {
+  // Get folder abbreviation from path
+  const flat = flattenTree(tree);
+  const folder = flat.find(n => n.id === folderId);
+  const path = folder ? [...(folder.path || []), folder.label] : [];
+  
+  // Build prefix from folder path (take first letters)
+  const prefixParts = path.map(p => {
+    const words = p.replace(/[^a-zA-Z0-9 ]/g, "").trim().split(/\s+/);
+    return words.map(w => w[0]?.toUpperCase() || "").join("").slice(0, 3);
+  });
+  const prefix = prefixParts.slice(-2).join("-") || "KOS"; // last 2 folders
+  
+  // Build suffix from note title (first letters of words, max 3 chars)
+  const titleWords = title.replace(/[^a-zA-Z0-9 ]/g, "").trim().split(/\s+/);
+  const titleCode = titleWords.map(w => w[0]?.toUpperCase() || "").join("").slice(0, 4);
+  
+  // Add 3-digit counter based on timestamp
+  const counter = String(Date.now() % 1000).padStart(3, "0");
+  
+  return "#" + prefix + "-" + titleCode + counter;
+};
+
+// ── Markdown renderer ─────────────────────────────────────────────────────────
+function renderMD(md) {
+  if (!md) return "";
+  let h = md
+    .replace(/```(\w*)\n([\s\S]*?)```/gm, (_, lang, code) => `<pre><code class="lang-${lang}">${code.trim().replace(/</g,'&lt;')}</code></pre>`)
+    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+    .replace(/^# (.+)$/gm, "<h1>$1</h1>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/^\> (.+)$/gm, "<blockquote>$1</blockquote>")
+    .replace(/^\- (.+)$/gm, "<li>$1</li>")
+    .replace(/^(\d+)\. (.+)$/gm, "<li>$2</li>")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+  h = h.replace(/(\|.+\|\n)+/g, table => {
+    const rows = table.trim().split("\n").filter(r => !r.match(/^\|[-|: ]+\|$/));
+    const pr = (row, tag) => "<tr>" + row.split("|").filter((_, i, a) => i > 0 && i < a.length - 1).map(c => `<${tag}>${c.trim()}</${tag}>`).join("") + "</tr>";
+    return `<table>${pr(rows[0], "th")}${rows.slice(1).map(r => pr(r, "td")).join("")}</table>`;
+  });
+  h = h.split("\n\n").map(p => {
+    if (p.match(/^<(h[123]|pre|table|blockquote|ul|ol|li)/) || !p.trim()) return p;
+    return `<p>${p.trim()}</p>`;
+  }).join("\n");
+  h = h.replace(/(<li>[\s\S]*?<\/li>\n?)+/g, m => `<ul>${m}</ul>`);
+  return h;
+}
+
+// ── CSS ───────────────────────────────────────────────────────────────────────
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg0: #0a0b0f; --bg1: #0f1117; --bg2: #161820; --bg3: #1d2030; --bg4: #252840;
+  --border: rgba(255,255,255,0.07); --border-hi: rgba(255,255,255,0.14);
+  --t0: #f0f2ff; --t1: #b8bdd4; --t2: #6e7491;
+  --accent: #7c6af7; --accent2: #a78bfa; --glow: rgba(124,106,247,0.25);
+  --teal: #22d3ee; --rose: #f472b6; --amber: #fbbf24; --emerald: #34d399; --orange: #fb923c;
+  --glass: rgba(255,255,255,0.04); --glass-hi: rgba(255,255,255,0.08);
+  --r: 12px; --rsm: 8px; --font: 'Inter',system-ui,sans-serif; --mono: 'JetBrains Mono',monospace;
+  --tr: 0.18s cubic-bezier(0.4,0,0.2,1);
+}
+body { font-family: var(--font); background: var(--bg0); color: var(--t0); height: 100vh; overflow: hidden; }
+::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 99px; }
+
+/* Layout */
+.app { display: flex; height: 100vh; overflow: hidden; }
+.sidebar { width: 220px; min-width: 220px; height: 100vh; background: var(--bg1); border-right: 1px solid var(--border); display: flex; flex-direction: column; transition: width var(--tr), min-width var(--tr); overflow: hidden; z-index: 20; }
+.sidebar.collapsed { width: 56px; min-width: 56px; }
+.explorer { width: 260px; min-width: 260px; height: 100vh; background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; transition: width var(--tr), min-width var(--tr); }
+.explorer.hidden { width: 0; min-width: 0; }
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+.rpanel { width: 260px; min-width: 260px; height: 100vh; background: var(--bg2); border-left: 1px solid var(--border); overflow-y: auto; transition: width var(--tr), min-width var(--tr); }
+.rpanel.hidden { width: 0; min-width: 0; overflow: hidden; }
+
+/* Sidebar */
+.slogo { padding: 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.slogo-mark { width: 30px; height: 30px; background: linear-gradient(135deg,var(--accent),var(--teal)); border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.slogo-text { font-size: 14px; font-weight: 700; color: var(--t0); white-space: nowrap; overflow: hidden; } .slogo-text span { color: var(--accent2); }
+.snav { flex: 1; overflow-y: auto; padding: 8px; }
+.nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: var(--rsm); cursor: pointer; transition: all var(--tr); color: var(--t2); font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; user-select: none; }
+.nav-item:hover { background: var(--glass-hi); color: var(--t1); }
+.nav-item.active { background: rgba(124,106,247,0.15); color: var(--accent2); }
+.nav-label { overflow: hidden; }
+.sidebar.collapsed .nav-label, .sidebar.collapsed .slogo-text { opacity: 0; width: 0; }
+.sfooter { padding: 8px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+.stoggle { width: 100%; display: flex; align-items: center; justify-content: center; padding: 8px; border-radius: var(--rsm); cursor: pointer; color: var(--t2); background: none; border: none; transition: all var(--tr); }
+.stoggle:hover { background: var(--glass-hi); color: var(--t0); }
+.new-note-btn { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: var(--rsm); cursor: pointer; background: rgba(124,106,247,0.12); color: var(--accent2); font-size: 13px; font-weight: 500; border: none; white-space: nowrap; overflow: hidden; transition: all var(--tr); }
+.new-note-btn:hover { background: rgba(124,106,247,0.22); }
+
+/* Explorer */
+.exp-header { padding: 12px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+.exp-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--t2); }
+.exp-actions { display: flex; gap: 2px; }
+.ibtn { background: none; border: none; cursor: pointer; color: var(--t2); padding: 5px; border-radius: 6px; display: flex; align-items: center; transition: all var(--tr); }
+.ibtn:hover { background: var(--glass-hi); color: var(--t0); }
+.tree-wrap { flex: 1; overflow-y: auto; padding: 6px; }
+.tree-row { display: flex; align-items: center; gap: 4px; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--t1); transition: all var(--tr); user-select: none; }
+.tree-row:hover { background: var(--glass-hi); color: var(--t0); }
+.tree-row.sel { background: rgba(124,106,247,0.14); color: var(--accent2); }
+.tree-row.drag-over { background: rgba(124,106,247,0.22); border: 1px dashed var(--accent); }
+.tree-row.dragging { opacity: 0.4; }
+.drag-handle { cursor: grab; color: var(--t2); padding: 0 2px; opacity: 0; transition: opacity var(--tr); display: flex; align-items: center; flex-shrink: 0; }
+.tree-row:hover .drag-handle { opacity: 1; }
+.tree-chevron { flex-shrink: 0; transition: transform var(--tr); color: var(--t2); }
+.tree-chevron.open { transform: rotate(90deg); }
+.folder-ic { color: var(--amber); flex-shrink: 0; }
+.file-ic { color: var(--teal); flex-shrink: 0; }
+.tree-lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-pin { color: var(--rose); flex-shrink: 0; }
+.tree-children { padding-left: 14px; }
+
+/* Toolbar */
+.toolbar { display: flex; align-items: center; gap: 4px; padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--bg1); flex-shrink: 0; flex-wrap: wrap; min-height: 44px; }
+.tbtn { background: none; border: none; cursor: pointer; color: var(--t2); padding: 5px 8px; border-radius: 6px; display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; transition: all var(--tr); white-space: nowrap; font-family: var(--font); }
+.tbtn:hover { background: var(--glass-hi); color: var(--t0); }
+.tbtn.on { background: rgba(124,106,247,0.15); color: var(--accent2); }
+.tbtn.danger { color: var(--rose); }
+.tbtn.danger:hover { background: rgba(244,114,182,0.12); }
+.tbtn.success { color: var(--emerald); }
+.tsep { width: 1px; height: 18px; background: var(--border-hi); margin: 0 2px; flex-shrink: 0; }
+.tspace { flex: 1; }
+
+/* Content */
+.content { flex: 1; overflow-y: auto; padding: 36px 48px; }
+.note-h1 { font-size: 30px; font-weight: 700; color: var(--t0); border: none; background: none; width: 100%; outline: none; letter-spacing: -0.6px; margin-bottom: 10px; line-height: 1.2; font-family: var(--font); }
+.note-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.meta-chip { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--t2); }
+.tag { padding: 2px 9px; border-radius: 99px; font-size: 11px; font-weight: 500; background: var(--glass-hi); color: var(--t1); cursor: pointer; border: 1px solid var(--border); transition: all var(--tr); }
+.tag:hover { border-color: var(--accent); color: var(--accent2); }
+.tag.add { border-style: dashed; }
+.note-textarea { width: 100%; min-height: 420px; background: transparent; border: none; outline: none; resize: none; color: var(--t1); font-size: 15px; line-height: 1.85; font-family: var(--font); caret-color: var(--accent2); }
+.md-view { min-height: 420px; line-height: 1.85; font-size: 15px; color: var(--t1); }
+.md-view h1 { font-size: 26px; font-weight: 700; color: var(--t0); margin: 20px 0 10px; letter-spacing: -0.5px; }
+.md-view h2 { font-size: 20px; font-weight: 600; color: var(--t0); margin: 18px 0 8px; }
+.md-view h3 { font-size: 16px; font-weight: 600; color: var(--t0); margin: 14px 0 6px; }
+.md-view p { margin-bottom: 12px; }
+.md-view strong { color: var(--t0); font-weight: 600; }
+.md-view em { font-style: italic; color: var(--t1); }
+.md-view code { font-family: var(--mono); font-size: 13px; background: var(--bg3); color: var(--teal); padding: 2px 6px; border-radius: 4px; }
+.md-view pre { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--r); padding: 16px; margin: 14px 0; overflow-x: auto; }
+.md-view pre code { background: none; color: var(--emerald); font-size: 13px; padding: 0; }
+.md-view blockquote { border-left: 3px solid var(--accent); padding: 8px 16px; margin: 14px 0; background: rgba(124,106,247,0.06); color: var(--t1); font-style: italic; }
+.md-view table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14px; }
+.md-view th { background: var(--bg3); color: var(--t0); padding: 9px 13px; text-align: left; font-weight: 600; border: 1px solid var(--border); }
+.md-view td { padding: 8px 13px; border: 1px solid var(--border); color: var(--t1); }
+.md-view ul, .md-view ol { padding-left: 22px; margin-bottom: 12px; }
+.md-view li { margin-bottom: 4px; }
+.md-view a { color: var(--accent2); }
+
+/* Dashboard */
+.dash-greeting { font-size: 26px; font-weight: 700; color: var(--t0); letter-spacing: -0.4px; margin-bottom: 4px; }
+.dash-sub { font-size: 13px; color: var(--t2); margin-bottom: 28px; }
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px,1fr)); gap: 12px; margin-bottom: 28px; }
+.stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); padding: 16px; transition: all var(--tr); cursor: default; }
+.stat-card:hover { border-color: var(--border-hi); transform: translateY(-2px); }
+.stat-ic { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
+.stat-ic.p { background: rgba(124,106,247,0.15); color: var(--accent2); }
+.stat-ic.t { background: rgba(34,211,238,0.12); color: var(--teal); }
+.stat-ic.r { background: rgba(244,114,182,0.12); color: var(--rose); }
+.stat-ic.a { background: rgba(251,191,36,0.12); color: var(--amber); }
+.stat-ic.e { background: rgba(52,211,153,0.12); color: var(--emerald); }
+.stat-val { font-size: 24px; font-weight: 700; color: var(--t0); letter-spacing: -0.4px; }
+.stat-lbl { font-size: 11px; color: var(--t2); font-weight: 500; margin-top: 2px; }
+.sec-title { font-size: 12px; font-weight: 600; color: var(--t1); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+.sec-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.notes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap: 12px; margin-bottom: 26px; }
+.note-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); padding: 16px; cursor: pointer; transition: all var(--tr); }
+.note-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 4px 20px rgba(124,106,247,0.12); }
+.nc-title { font-size: 13px; font-weight: 600; color: var(--t0); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+.nc-preview { font-size: 12px; color: var(--t2); line-height: 1.6; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.nc-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+.nc-date { font-size: 10px; color: var(--t2); }
+.progress-bar { height: 4px; background: var(--bg4); border-radius: 99px; overflow: hidden; margin-top: 6px; }
+.progress-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg,var(--accent),var(--teal)); transition: width 0.9s cubic-bezier(0.4,0,0.2,1); }
+.graph-box { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); padding: 16px; margin-bottom: 26px; }
+
+/* AI Chat */
+.chat-wrap { display: flex; flex-direction: column; height: 100%; }
+.chat-hdr { padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--bg1); display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.chat-hdr-title { font-size: 14px; font-weight: 600; color: var(--t0); flex: 1; }
+.chat-msgs { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.cmsg { display: flex; gap: 10px; animation: fadeUp .25s ease; }
+.cmsg.user { flex-direction: row-reverse; }
+.cavatar { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 11px; font-weight: 700; }
+.cavatar.ai { background: linear-gradient(135deg,var(--accent),var(--teal)); }
+.cavatar.user { background: var(--bg4); color: var(--t1); }
+.cbubble { max-width: 74%; padding: 10px 14px; border-radius: var(--r); font-size: 14px; line-height: 1.7; }
+.cbubble.ai { background: var(--bg3); border: 1px solid var(--border); color: var(--t1); border-top-left-radius: 3px; }
+.cbubble.user { background: rgba(124,106,247,0.2); border: 1px solid rgba(124,106,247,0.3); color: var(--t0); border-top-right-radius: 3px; }
+.cbubble h1,.cbubble h2,.cbubble h3 { color: var(--t0); margin: 8px 0 4px; }
+.cbubble code { font-family: var(--mono); font-size: 12px; background: var(--bg0); color: var(--teal); padding: 1px 5px; border-radius: 3px; }
+.cbubble pre { background: var(--bg0); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin: 6px 0; overflow-x: auto; }
+.cbubble pre code { background: none; color: var(--emerald); }
+.cbubble strong { color: var(--t0); }
+.cbubble ul, .cbubble ol { padding-left: 18px; }
+.chat-sugg { padding: 10px 20px; border-top: 1px solid var(--border); flex-shrink: 0; }
+.sugg-lbl { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--t2); margin-bottom: 7px; }
+.sugg-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.chip { padding: 4px 10px; background: var(--bg3); border: 1px solid var(--border); border-radius: 99px; font-size: 12px; color: var(--t1); cursor: pointer; transition: all var(--tr); }
+.chip:hover { border-color: var(--accent); color: var(--accent2); }
+.chat-inp-row { padding: 10px 20px; border-top: 1px solid var(--border); background: var(--bg1); display: flex; gap: 8px; align-items: flex-end; flex-shrink: 0; }
+.chat-ta { flex: 1; background: var(--bg3); border: 1px solid var(--border); border-radius: var(--r); padding: 9px 13px; color: var(--t0); font-size: 14px; font-family: var(--font); resize: none; outline: none; transition: border-color var(--tr); }
+.chat-ta:focus { border-color: var(--accent); }
+.chat-send { background: var(--accent); border: none; border-radius: var(--rsm); padding: 9px 12px; cursor: pointer; color: #fff; display: flex; align-items: center; transition: all var(--tr); flex-shrink: 0; }
+.chat-send:hover { background: var(--accent2); }
+.tdot { width: 5px; height: 5px; border-radius: 50%; background: var(--t2); display: inline-block; animation: blink 1.2s infinite; }
+.tdot:nth-child(2) { animation-delay: .2s; } .tdot:nth-child(3) { animation-delay: .4s; }
+
+/* Search */
+.sbar { display: flex; align-items: center; gap: 10px; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); padding: 11px 14px; transition: border-color var(--tr); margin-bottom: 16px; }
+.sbar:focus-within { border-color: var(--accent); }
+.sinput { flex: 1; background: none; border: none; outline: none; font-size: 15px; color: var(--t0); font-family: var(--font); }
+.sinput::placeholder { color: var(--t2); }
+.sresult { display: flex; gap: 10px; padding: 11px; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); cursor: pointer; transition: all var(--tr); margin-bottom: 8px; }
+.sresult:hover { border-color: var(--accent); }
+.sric { width: 30px; height: 30px; border-radius: 7px; background: var(--bg3); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.sr-title { font-size: 13px; font-weight: 600; color: var(--t0); margin-bottom: 2px; }
+.sr-path { font-size: 11px; color: var(--t2); }
+.sr-prev { font-size: 12px; color: var(--t1); margin-top: 3px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+mark { background: rgba(124,106,247,0.3); color: var(--accent2); border-radius: 2px; padding: 0 2px; }
+
+/* Right panel */
+.rp-sec { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.rp-sec-title { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--t2); margin-bottom: 10px; }
+.rp-row { display: flex; align-items: flex-start; gap: 8px; padding: 4px 0; font-size: 13px; color: var(--t1); }
+.rp-key { color: var(--t2); font-size: 11px; min-width: 64px; padding-top: 1px; }
+.rp-ai { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--rsm); padding: 10px 12px; font-size: 12px; color: var(--t1); line-height: 1.6; }
+
+/* Revision */
+.rev-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); padding: 16px; display: flex; align-items: center; gap: 14px; cursor: pointer; transition: all var(--tr); margin-bottom: 10px; }
+.rev-card:hover { border-color: var(--accent); transform: translateX(4px); }
+
+/* Settings */
+.set-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.set-group { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); padding: 18px; }
+.set-group-title { font-size: 13px; font-weight: 600; color: var(--t0); margin-bottom: 14px; }
+.set-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.set-row:last-child { border-bottom: none; padding-bottom: 0; }
+.set-lbl { font-size: 13px; color: var(--t1); }
+.set-val { font-size: 12px; color: var(--t2); }
+.toggle { width: 34px; height: 18px; border-radius: 99px; background: var(--bg4); cursor: pointer; position: relative; transition: background var(--tr); flex-shrink: 0; }
+.toggle.on { background: var(--accent); }
+.toggle-k { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform var(--tr); }
+.toggle.on .toggle-k { transform: translateX(16px); }
+
+/* Modal */
+.modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal { background: var(--bg2); border: 1px solid var(--border-hi); border-radius: 16px; padding: 28px; width: 420px; max-width: 90vw; }
+.modal-title { font-size: 17px; font-weight: 700; color: var(--t0); margin-bottom: 20px; }
+.modal-label { font-size: 12px; color: var(--t2); margin-bottom: 6px; }
+.modal-input { width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--t0); font-size: 14px; outline: none; font-family: var(--font); transition: border-color var(--tr); margin-bottom: 14px; }
+.modal-input:focus { border-color: var(--accent); }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 6px; }
+
+/* Misc */
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 80px 20px; color: var(--t2); text-align: center; }
+.empty-ic { width: 52px; height: 52px; border-radius: var(--r); background: var(--bg3); display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
+.empty-title { font-size: 14px; font-weight: 600; color: var(--t1); }
+.empty-sub { font-size: 12px; max-width: 220px; }
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 15px; border-radius: var(--rsm); border: none; cursor: pointer; font-size: 13px; font-weight: 500; transition: all var(--tr); font-family: var(--font); }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent2); }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-ghost { background: var(--glass); border: 1px solid var(--border); color: var(--t1); }
+.btn-ghost:hover { background: var(--glass-hi); color: var(--t0); }
+.btn-danger { background: rgba(244,114,182,0.1); border: 1px solid rgba(244,114,182,0.3); color: var(--rose); }
+.btn-danger:hover { background: rgba(244,114,182,0.2); }
+.badge { padding: 2px 7px; border-radius: 99px; font-size: 10px; font-weight: 600; }
+.badge-purple { background: rgba(124,106,247,0.15); color: var(--accent2); }
+.badge-teal { background: rgba(34,211,238,0.12); color: var(--teal); }
+.badge-amber { background: rgba(251,191,36,0.12); color: var(--amber); }
+.toast { position: fixed; bottom: 20px; right: 20px; background: var(--bg3); border: 1px solid var(--border-hi); border-radius: var(--r); padding: 12px 18px; font-size: 13px; color: var(--t0); z-index: 9999; animation: fadeUp .25s ease; display: flex; align-items: center; gap: 8px; }
+.ctx-menu { position: fixed; background: var(--bg2); border: 1px solid var(--border-hi); border-radius: var(--rsm); padding: 4px; min-width: 160px; z-index: 9998; box-shadow: 0 8px 32px rgba(0,0,0,0.5); animation: fadeUp .15s ease; }
+.ctx-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; font-size: 13px; color: var(--t1); cursor: pointer; transition: all var(--tr); }
+.ctx-item:hover { background: var(--glass-hi); color: var(--t0); }
+.ctx-item.danger { color: var(--rose); }
+.ctx-item.danger:hover { background: rgba(244,114,182,0.12); }
+.ctx-sep { height: 1px; background: var(--border); margin: 3px 0; }
+.color-row { display: flex; gap: 5px; align-items: center; }
+.cp { width: 14px; height: 14px; border-radius: 50%; cursor: pointer; border: 1.5px solid transparent; transition: border-color var(--tr); flex-shrink: 0; }
+.cp:hover, .cp.sel { border-color: rgba(255,255,255,0.6); }
+.breadcrumb { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--t2); margin-bottom: 16px; }
+.breadcrumb .sep { color: var(--bg4); }
+.word-count-bar { display: flex; align-items: center; gap: 12px; padding: 6px 48px; border-top: 1px solid var(--border); font-size: 11px; color: var(--t2); flex-shrink: 0; }
+
+@keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes blink { 0%,80%,100% { opacity: 0; } 40% { opacity: 1; } }
+@keyframes pulse { 0%,100% { opacity:.4; } 50% { opacity:1; } }
+`;
+
+// ── Context Menu ──────────────────────────────────────────────────────────────
+// ── ConfirmModal (replaces confirm() — blocked in iframes) ────────────────────
+function ConfirmModal({ title, message, confirmLabel = "Delete", danger = true, onConfirm, onCancel }) {
+  return (
+    <div className="modal-bg" onClick={e => e.target === e.currentTarget && onCancel()}>
+      <div className="modal" style={{ width: 360 }}>
+        <div className="modal-title">{title}</div>
+        <div style={{ fontSize: 14, color: "var(--t1)", marginBottom: 22, lineHeight: 1.6 }}>{message}</div>
+        <div className="modal-actions">
+          <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
+          <button className={`btn ${danger ? "btn-danger" : "btn-primary"}`} onClick={onConfirm}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── RenameModal (replaces prompt() — blocked in iframes) ──────────────────────
+function RenameModal({ current, type, onConfirm, onCancel }) {
+  const [val, setVal] = useState(current);
+  const submit = () => { if (val.trim() && val.trim() !== current) onConfirm(val.trim()); else onCancel(); };
+  return (
+    <div className="modal-bg" onClick={e => e.target === e.currentTarget && onCancel()}>
+      <div className="modal" style={{ width: 360 }}>
+        <div className="modal-title">Rename {type}</div>
+        <div className="modal-label">New name</div>
+        <input className="modal-input" autoFocus value={val} onChange={e => setVal(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") submit(); if (e.key === "Escape") onCancel(); }} />
+        <div className="modal-actions">
+          <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
+          <button className="btn btn-primary" onClick={submit} disabled={!val.trim() || val.trim() === current}>Rename</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ContextMenu({ x, y, items, onClose }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const h = e => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    setTimeout(() => document.addEventListener("mousedown", h), 0);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+  // Keep menu inside viewport
+  const left = Math.min(x, window.innerWidth - 180);
+  const top = Math.min(y, window.innerHeight - items.length * 36 - 20);
+  return (
+    <div ref={ref} className="ctx-menu" style={{ left, top }}>
+      {items.map((item, i) =>
+        item === "sep" ? <div key={i} className="ctx-sep" /> :
+        <div key={i} className={`ctx-item${item.danger ? " danger" : ""}`} onClick={() => { item.action(); onClose(); }}>
+          <Icon d={item.icon} size={14} />{item.label}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Drag ghost overlay ────────────────────────────────────────────────────────
+// Uses mouse events instead of HTML5 drag API (which is blocked in iframes)
+const dragState = { id: null, label: null };
+
+function DragGhost({ label, x, y }) {
+  if (!label) return null;
+  return (
+    <div data-drag-ghost style={{
+      position: "fixed", left: x + 14, top: y - 12, zIndex: 99999,
+      background: "var(--bg3)", border: "1px solid var(--accent)",
+      borderRadius: 6, padding: "4px 10px", fontSize: 12, color: "var(--accent2)",
+      pointerEvents: "none", userSelect: "none", whiteSpace: "nowrap",
+      display: "flex", alignItems: "center", gap: 6,
+    }}>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"/></svg>
+      {label}
+    </div>
+  );
+}
+
+// ── TreeNode ──────────────────────────────────────────────────────────────────
+function TreeNode({ node, depth, selId, onSelect, onToggle, onRename, onDelete, onNewNote, onNewFolder, onMove, onFolderClick, dropTargetId }) {
+  const isF = node.type === "folder";
+  const hasC = node.children && node.children.length > 0;
+  const [ctx, setCtx] = useState(null);
+  const rowRef = useRef(null);
+
+  const isDragTarget = dropTargetId === node.id && isF;
+
+  const handleCtx = e => {
+    e.preventDefault(); e.stopPropagation();
+    const items = isF ? [
+      { icon: ic.plus, label: "New note here", action: () => onNewNote(node.id) },
+      { icon: ic.folderPlus, label: "New subfolder", action: () => onNewFolder(node.id) },
+      "sep",
+      { icon: ic.edit, label: "Rename", action: () => onRename(node.id, node.label, "folder") },
+      "sep",
+      { icon: ic.trash, label: "Delete folder", danger: true, action: () => onDelete(node.id, "folder", node.label) },
+    ] : [
+      { icon: ic.eye, label: "Open note", action: () => onSelect(node) },
+      { icon: ic.edit, label: "Rename", action: () => onRename(node.id, node.label, "note") },
+      "sep",
+      { icon: ic.pin, label: "Pin / Unpin", action: () => onSelect({ ...node, _pin: true }) },
+      "sep",
+      { icon: ic.trash, label: "Delete note", danger: true, action: () => onDelete(node.id, "note", node.label) },
+    ];
+    setCtx({ x: e.clientX, y: e.clientY, items });
+  };
+
+  const handleMouseDown = e => {
+    if (e.button !== 0) return;
+    if (e.target.closest(".ctx-menu")) return;
+    e.preventDefault();
+    dragState.id = node.id;
+    dragState.label = node.label;
+    window.__mouseDragStart = { x: e.clientX, y: e.clientY };
+    window.__mouseDragging = false;
+  };
+
+  const handleClick = e => {
+    if (window.__mouseDragging) return; // was a drag, not a click
+    if (isF) { onToggle(node.id); onFolderClick(node); }
+    else { onSelect(node); }
+  };
+
+  return (
+    <div data-nodeid={node.id} data-nodetype={node.type}>
+      {ctx && <ContextMenu x={ctx.x} y={ctx.y} items={ctx.items} onClose={() => setCtx(null)} />}
+      <div
+        ref={rowRef}
+        className={`tree-row${selId === node.id ? " sel" : ""}${isDragTarget ? " drag-over" : ""}`}
+        style={{ paddingLeft: 8 + depth * 14 }}
+        onClick={handleClick}
+        onContextMenu={handleCtx}
+      >
+        <span className="drag-handle" onMouseDown={handleMouseDown} title="Drag to move">
+          <svg width="10" height="14" viewBox="0 0 10 14" fill="var(--t2)">
+            <circle cx="3" cy="3" r="1.2"/><circle cx="7" cy="3" r="1.2"/>
+            <circle cx="3" cy="7" r="1.2"/><circle cx="7" cy="7" r="1.2"/>
+            <circle cx="3" cy="11" r="1.2"/><circle cx="7" cy="11" r="1.2"/>
+          </svg>
+        </span>
+        {isF ? (
+          <span className={`tree-chevron${node.expanded ? " open" : ""}`} style={{ width: 14, display: "flex", alignItems: "center" }}>
+            {hasC ? <Icon d={ic.chevronRight} size={12} /> : <span style={{ width: 12 }} />}
+          </span>
+        ) : <span style={{ width: 14 }} />}
+        <span className={isF ? "folder-ic" : "file-ic"}>
+          <Icon d={isF ? (node.expanded ? ic.folderOpen : ic.folder) : ic.file} size={14} />
+        </span>
+        <span className="tree-lbl">{node.label}</span>
+        {node.pinned && <span className="tree-pin"><Icon d={ic.pin} size={10} fill="var(--rose)" stroke="var(--rose)" /></span>}
+      </div>
+      {isF && node.expanded && node.children && (
+        <div className="tree-children">
+          {[...node.children].sort((a,b)=>{
+            if(a.type===b.type)return 0;
+            return a.type==="folder"?1:-1;
+          }).map(c => (
+            <TreeNode key={c.id} node={c} depth={depth + 1} selId={selId}
+              onSelect={onSelect} onToggle={onToggle}
+              onRename={onRename} onDelete={onDelete}
+              onNewNote={onNewNote} onNewFolder={onNewFolder}
+              onMove={onMove} onFolderClick={onFolderClick}
+              dropTargetId={dropTargetId} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── KnowledgeGraph ────────────────────────────────────────────────────────────
+function KnowledgeGraph({ tree }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const canvas = ref.current; if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const W = canvas.offsetWidth || 600, H = 200;
+    canvas.width = W; canvas.height = H;
+    const items = flattenTree(tree).filter(n => n.type === "folder").slice(0, 9);
+    const colors = ["#a78bfa", "#22d3ee", "#fbbf24", "#34d399", "#f472b6", "#f97316", "#60a5fa", "#e879f9", "#a3e635"];
+    const nodes = items.map((n, i) => ({
+      x: i === 0 ? W * 0.5 : W * (0.5 + 0.4 * Math.cos(2 * Math.PI * (i - 1) / Math.min(items.length - 1, 8))),
+      y: i === 0 ? H * 0.5 : H * (0.5 + 0.38 * Math.sin(2 * Math.PI * (i - 1) / Math.min(items.length - 1, 8))),
+      r: i === 0 ? 14 : 9, label: n.label.slice(0, 11), color: colors[i % colors.length]
+    }));
+    const edges = nodes.slice(1).map((_, i) => [0, i + 1]);
+    let raf, t = 0;
+    const draw = ts => {
+      t = ts; ctx.clearRect(0, 0, W, H);
+      edges.forEach(([a, b]) => {
+        if (!nodes[b]) return;
+        ctx.strokeStyle = `rgba(124,106,247,${0.18 + 0.12 * Math.sin(t / 1200 + a)})`;
+        ctx.lineWidth = 1; ctx.setLineDash([4, 4]); ctx.lineDashOffset = -t / 55;
+        ctx.beginPath(); ctx.moveTo(nodes[a].x, nodes[a].y); ctx.lineTo(nodes[b].x, nodes[b].y); ctx.stroke();
+      });
+      ctx.setLineDash([]);
+      nodes.forEach(n => {
+        ctx.fillStyle = n.color + "20"; ctx.strokeStyle = n.color; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = "#f0f2ff"; ctx.font = "10px Inter"; ctx.textAlign = "center";
+        ctx.fillText(n.label, n.x, n.y + n.r + 12);
+      });
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [tree]);
+  return <canvas ref={ref} style={{ width: "100%", height: 200, display: "block" }} />;
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function Toast({ msg, icon }) {
+  return (
+    <div className="toast">
+      {icon && <Icon d={icon} size={15} stroke="var(--emerald)" />}
+      {msg}
+    </div>
+  );
+}
+
+// ── NewNoteModal ──────────────────────────────────────────────────────────────
+function NewNoteModal({ tree, onClose, onCreate, defaultFolderId }) {
+  const [title, setTitle] = useState("");
+  const folders = flattenTree(tree).filter(n => n.type === "folder");
+  const [fid, setFid] = useState(defaultFolderId || folders[0]?.id || "");
+  const create = () => {
+    if (!title.trim()) return;
+    const id = "note_" + Date.now();
+    const kosKey = generateKosKey(title.trim(), tree, fid);
+    onCreate(id, fid, { title: title.trim(), content: "", tags: [], pinned: false, color: "", archived: false, wordCount: 0, kosKey, created: new Date().toISOString().split("T")[0], updated: new Date().toISOString().split("T")[0] });
+    onClose();
+  };
+  return (
+    <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-title">New Note</div>
+        <div className="modal-label">Title</div>
+        <input className="modal-input" autoFocus placeholder="Note title…" value={title} onChange={e => setTitle(e.target.value)} onKeyDown={e => e.key === "Enter" && create()} />
+        <div className="modal-label">Folder</div>
+        <select className="modal-input" value={fid} onChange={e => setFid(e.target.value)}>
+          {folders.map(f => <option key={f.id} value={f.id}>{f.path.length ? f.path.join(" › ") + " › " : ""}{f.label}</option>)}
+        </select>
+        <div className="modal-actions">
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={create} disabled={!title.trim()}>Create</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── NewFolderModal ────────────────────────────────────────────────────────────
+function NewFolderModal({ tree, onClose, onCreate, defaultFolderId }) {
+  const [name, setName] = useState("");
+  const folders = [{ id: "__root__", label: "Root (top level)", path: [] }, ...flattenTree(tree).filter(n => n.type === "folder")];
+  const [fid, setFid] = useState(defaultFolderId || "__root__");
+  const create = () => {
+    if (!name.trim()) return;
+    onCreate(fid === "__root__" ? null : fid, { id: "folder_" + Date.now(), label: name.trim(), type: "folder", expanded: true, children: [] });
+    onClose();
+  };
+  return (
+    <div className="modal-bg" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-title">New Folder</div>
+        <div className="modal-label">Folder name</div>
+        <input className="modal-input" autoFocus placeholder="Folder name…" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === "Enter" && create()} />
+        <div className="modal-label">Parent</div>
+        <select className="modal-input" value={fid} onChange={e => setFid(e.target.value)}>
+          {folders.map(f => <option key={f.id} value={f.id}>{f.path?.length ? f.path.join(" › ") + " › " : ""}{f.label}</option>)}
+        </select>
+        <div className="modal-actions">
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={create} disabled={!name.trim()}>Create</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── NoteEditor ────────────────────────────────────────────────────────────────
+function NoteEditor({ note, noteId, tree, onUpdate, onDelete, onToast }) {
+  const [title, setTitle] = useState(note.title || "");
+  const [content, setContent] = useState(note.content || "");
+  const [tags, setTags] = useState(note.tags || []);
+  const [pinned, setPinned] = useState(note.pinned || false);
+  const [archived, setArchived] = useState(note.archived || false);
+  const [color, setColor] = useState(note.color || "");
+  const [preview, setPreview] = useState(true); // ← DEFAULT PREVIEW ON
+  const [saved, setSaved] = useState(true);
+  const timer = useRef(null);
+
+  useEffect(() => {
+    setTitle(note.title || ""); setContent(note.content || ""); setTags(note.tags || []);
+    setPinned(note.pinned || false); setArchived(note.archived || false); setColor(note.color || "");
+    setPreview(true); // ← always open in preview
+  }, [noteId]);
+
+  const save = (t, c, tg, p, ar, cl) => {
+    const wc = c.trim() ? c.trim().split(/\s+/).length : 0;
+    onUpdate(noteId, { title: t, content: c, tags: tg, pinned: p, archived: ar, color: cl, wordCount: wc, updated: new Date().toISOString().split("T")[0] });
+    setSaved(true);
+  };
+  const sched = (t, c, tg, p, ar, cl) => { setSaved(false); clearTimeout(timer.current); timer.current = setTimeout(() => save(t, c, tg, p, ar, cl), 700); };
+
+  const words = content.trim() ? content.trim().split(/\s+/).length : 0;
+  const COLORS = ["", "#FFF3CD", "#D4EDDA", "#CCE5FF", "#F8D7DA", "#E2D9F3", "#FFE4CC"];
+
+  // ── Smart content type detection ──────────────────────────────────────────
+  const contentType = (() => {
+    const trimmed = content.trim();
+    if (!trimmed) return "empty";
+    // Full HTML document or rich HTML snippet
+    if (trimmed.startsWith("<!DOCTYPE") || trimmed.startsWith("<html")) return "html-doc";
+    // HTML snippet (starts with a tag like <div, <table, <p, <h1 etc.)
+    if (/^<[a-zA-Z]/.test(trimmed) && trimmed.includes("</")) return "html-snippet";
+    return "markdown";
+  })();
+
+  // ── Render preview based on content type ─────────────────────────────────
+  const renderPreview = () => {
+    if (contentType === "html-doc") {
+      // Full HTML doc → render in sandboxed iframe
+      return (
+        <iframe
+          srcDoc={content}
+          style={{ width: "100%", minHeight: 600, border: "none", borderRadius: 8, background: "#fff" }}
+          sandbox="allow-scripts allow-same-origin"
+          title="HTML Preview"
+        />
+      );
+    }
+    if (contentType === "html-snippet") {
+      // HTML snippet → render directly with dark theme wrapper
+      return (
+        <div style={{ background: "var(--bg3)", borderRadius: 8, padding: 16, minHeight: 200 }}
+          dangerouslySetInnerHTML={{ __html: content }} />
+      );
+    }
+    // Markdown (default)
+    return <div className="md-view" dangerouslySetInnerHTML={{ __html: renderMD(content) }} />;
+  };
+
+  const [tagInput, setTagInput] = useState(false);
+  const [tagVal, setTagVal] = useState("");
+  const addTag = () => setTagInput(true);
+  const submitTag = () => {
+    if (tagVal.trim()) { const nt = [...new Set([...tags, tagVal.trim().toLowerCase()])]; setTags(nt); sched(title, content, nt, pinned, archived, color); }
+    setTagVal(""); setTagInput(false);
+  };
+  const removeTag = tg => { const nt = tags.filter(x => x !== tg); setTags(nt); sched(title, content, nt, pinned, archived, color); };
+
+  const copyContent = () => { navigator.clipboard.writeText(content); onToast("Copied to clipboard", ic.check); };
+  const exportHTML = () => {
+    const bodyHtml = renderMD(content);
+    const wc = content.trim() ? content.trim().split(/\s+/).length : 0;
+    const pathCrumb = nodePath.length ? `<div class="bc">${nodePath.join(" › ")} › <strong>${title||"Untitled"}</strong></div>` : "";
+    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>${title||"Note"}</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}body{font-family:'Inter',system-ui,sans-serif;background:#0a0b0f;color:#b8bdd4;min-height:100vh}.page{max-width:800px;margin:0 auto;padding:60px 44px 90px}.bc{font-size:12px;color:#6e7491;margin-bottom:28px}.bc strong{color:#a78bfa}.note-title{font-size:38px;font-weight:700;color:#f0f2ff;letter-spacing:-1.2px;line-height:1.15;margin-bottom:20px}.meta{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding-bottom:20px;border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:38px;font-size:12px;color:#6e7491}.tag{padding:3px 11px;border-radius:99px;font-size:11px;font-weight:500;background:rgba(124,106,247,.15);color:#a78bfa;border:1px solid rgba(124,106,247,.3)}.body h1{font-size:28px;font-weight:700;color:#f0f2ff;margin:34px 0 12px}.body h2{font-size:22px;font-weight:600;color:#f0f2ff;margin:28px 0 10px}.body h3{font-size:17px;font-weight:600;color:#f0f2ff;margin:22px 0 8px}.body p{margin-bottom:14px;line-height:1.9}.body strong{color:#f0f2ff;font-weight:600}.body code{font-family:'JetBrains Mono',monospace;font-size:13px;background:#1d2030;color:#22d3ee;padding:2px 8px;border-radius:5px}.body pre{background:#161820;border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:20px 22px;margin:18px 0;overflow-x:auto}.body pre code{background:none;color:#34d399;font-size:13px;padding:0}.body blockquote{border-left:3px solid #7c6af7;padding:11px 18px;margin:18px 0;background:rgba(124,106,247,.07);font-style:italic;border-radius:0 8px 8px 0}.body ul,.body ol{padding-left:24px;margin-bottom:14px}.body li{margin-bottom:6px;line-height:1.8}.body table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}.body th{background:#1d2030;color:#f0f2ff;padding:10px 14px;text-align:left;font-weight:600;border:1px solid rgba(255,255,255,.08)}.body td{padding:9px 14px;border:1px solid rgba(255,255,255,.07)}.footer{margin-top:64px;padding-top:20px;border-top:1px solid rgba(255,255,255,.07);font-size:11px;color:#6e7491;display:flex;justify-content:space-between}.logo{font-weight:700;color:#6e7491}.logo span{color:#a78bfa}</style>
+</head><body><div class="page">${pathCrumb}<h1 class="note-title">${title||"Untitled"}</h1>
+<div class="meta"><span>📅 ${note.created||"—"}</span><span>✏️ Updated ${note.updated||"—"}</span><span>📖 ${Math.max(1,Math.ceil(wc/200))} min read</span>${tags.map(t=>`<span class="tag">${t}</span>`).join(" ")}</div>
+<div class="body">${bodyHtml}</div>
+<div class="footer"><span class="logo">Know<span>ledge</span> OS</span><span>Exported ${new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}</span></div>
+</div></body></html>`;
+    const a = document.createElement("a");
+    a.href = "data:text/html;charset=utf-8," + encodeURIComponent(html);
+    a.download = (title||"note").replace(/\s+/g,"-").toLowerCase()+".html";
+    a.click();
+    onToast("Exported as styled HTML ✨", ic.download);
+  };
+
+  const nodePath = (() => {
+    const all = flattenTree(tree);
+    const n = all.find(x => x.id === noteId);
+    return n ? n.path : [];
+  })();
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      <div className="toolbar">
+        <div className="color-row">
+          {COLORS.map(c => (
+            <div key={c} className={`cp${color === c ? " sel" : ""}`}
+              style={{ background: c || "var(--bg4)", border: color === c ? "2px solid rgba(255,255,255,0.7)" : undefined }}
+              onClick={() => { setColor(c); sched(title, content, tags, pinned, archived, c); }} title={c || "No color"} />
+          ))}
+        </div>
+        <div className="tsep" />
+        <button className={`tbtn${pinned ? " on" : ""}`} onClick={() => { const p = !pinned; setPinned(p); save(title, content, tags, p, archived, color); onToast(p ? "Pinned" : "Unpinned", ic.pin); }}>
+          <Icon d={ic.pin} size={13} fill={pinned ? "var(--rose)" : "none"} stroke={pinned ? "var(--rose)" : "currentColor"} /> {pinned ? "Pinned" : "Pin"}
+        </button>
+        <button className={`tbtn${archived ? " on" : ""}`} onClick={() => { const a = !archived; setArchived(a); save(title, content, tags, pinned, a, color); onToast(a ? "Archived" : "Unarchived", ic.archive); }}>
+          <Icon d={ic.archive} size={13} /> {archived ? "Archived" : "Archive"}
+        </button>
+        <div className="tsep" />
+        <button className={`tbtn${!preview ? " on" : ""}`} onClick={() => setPreview(p => !p)}>
+          <Icon d={ic.edit} size={13} /> {preview ? "Edit" : "Editing…"}
+        </button>
+        {/* Content type badge */}
+        <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 99, background: contentType === "html-doc" ? "rgba(251,191,36,0.15)" : contentType === "html-snippet" ? "rgba(34,211,238,0.12)" : "rgba(124,106,247,0.12)", color: contentType === "html-doc" ? "var(--amber)" : contentType === "html-snippet" ? "var(--teal)" : "var(--accent2)", fontWeight: 600, whiteSpace: "nowrap" }}>
+          {contentType === "html-doc" ? "HTML DOC" : contentType === "html-snippet" ? "HTML" : "MARKDOWN"}
+        </span>
+        <div className="tspace" />
+        {(note.kosKey || noteId) && (
+          <div style={{ display:"flex", alignItems:"center", gap:6, padding:"4px 10px", borderRadius:6,
+            background:"rgba(124,106,247,0.15)", border:"1px solid rgba(124,106,247,0.4)", flexShrink:0 }}>
+            <span style={{ fontSize:13 }}>🔑</span>
+            <input
+              readOnly
+              value={note.kosKey || noteId.replace("note_","#NOTE-")}
+              title="Click to select, then Ctrl+C to copy — tell Claude this key to update the note"
+              onFocus={e => e.target.select()}
+              onClick={e => e.target.select()}
+              style={{ fontSize:12, fontFamily:"var(--mono)", color:"var(--accent2)",
+                background:"transparent", border:"none", outline:"none",
+                cursor:"text", userSelect:"all", width: Math.max(80, ((note.kosKey||noteId).length * 8)) + "px" }}
+            />
+          </div>
+        )}
+        <button className="tbtn" onClick={copyContent}><Icon d={ic.copy} size={13} /> Copy</button>
+        <button className="tbtn" onClick={exportHTML}><Icon d={ic.export} size={13} /> Export HTML</button>
+        <button className="tbtn danger" onClick={() => onDelete(noteId)}>
+          <Icon d={ic.trash} size={13} /> Delete
+        </button>
+        <button className={`tbtn${saved ? " success" : ""}`}>
+          <Icon d={saved ? ic.check : ic.refresh} size={13} /> {saved ? "Saved" : "Saving…"}
+        </button>
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto", background: color || "transparent" }}>
+        <div className="content">
+          {nodePath.length > 0 && (
+            <div className="breadcrumb">
+              {nodePath.map((p, i) => <span key={i}>{i > 0 && <span className="sep"> › </span>}{p}</span>)}
+              <span className="sep"> › </span>
+              <span style={{ color: "var(--t1)" }}>{title || "Untitled"}</span>
+            </div>
+          )}
+          <input className="note-h1" value={title} placeholder="Note title…"
+            onChange={e => { setTitle(e.target.value); sched(e.target.value, content, tags, pinned, archived, color); }} />
+          <div className="note-meta">
+            <div className="meta-chip"><Icon d={ic.clock} size={12} />{note.created || "—"}</div>
+            <div className="meta-chip"><Icon d={ic.edit} size={12} />Updated {note.updated || "—"}</div>
+            <div className="meta-chip"><Icon d={ic.eye} size={12} />{Math.max(1, Math.ceil(words / 200))} min read</div>
+            {tags.map(t => <span key={t} className="tag" onClick={() => removeTag(t)} title="Click to remove">{t} ×</span>)}
+            {tagInput ? (
+              <input autoFocus value={tagVal} onChange={e => setTagVal(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") submitTag(); if (e.key === "Escape") { setTagInput(false); setTagVal(""); } }}
+                onBlur={submitTag}
+                placeholder="tag name…"
+                style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, border: "1px solid var(--accent)", background: "var(--bg3)", color: "var(--t0)", outline: "none", width: 90, fontFamily: "var(--font)" }} />
+            ) : (
+              <span className="tag add" onClick={addTag}>+ tag</span>
+            )}
+            {pinned && <span className="badge badge-purple">Pinned</span>}
+            {archived && <span className="badge badge-amber">Archived</span>}
+          </div>
+          {preview ? (
+            renderPreview()
+          ) : (
+            <textarea className="note-textarea" value={content} placeholder={"Start writing…\n\nMarkdown supported:\n# Heading  **bold**  `code`\n- Bullet list\n> Blockquote\n\nPaste full HTML — it will render automatically in preview!"}
+              onChange={e => { setContent(e.target.value); sched(title, e.target.value, tags, pinned, archived, color); }} />
+          )}
+        </div>
+      </div>
+      <div className="word-count-bar">
+        <span>{words} words</span>
+        <span>·</span>
+        <span>{content.length} chars</span>
+        <span>·</span>
+        <span>{Math.max(1, Math.ceil(words / 200))} min read</span>
+        {!saved && <span style={{ marginLeft: "auto", color: "var(--amber)" }}>● Unsaved changes</span>}
+      </div>
+    </div>
+  );
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+function Dashboard({ notes, tree, onOpenNote }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setTimeout(() => setMounted(true), 100); }, []);
+  const total = Object.keys(notes).length;
+  const words = Object.values(notes).reduce((a, n) => a + (n.wordCount || 0), 0);
+  const folders = flattenTree(tree).filter(n => n.type === "folder").length;
+  const pinned = Object.values(notes).filter(n => n.pinned).length;
+  const archived = Object.values(notes).filter(n => n.archived).length;
+  const hour = new Date().getHours();
+  const recent = Object.entries(notes).filter(([_, n]) => !n.archived).slice(0, 6);
+  const pinnedNotes = Object.entries(notes).filter(([_, n]) => n.pinned && !n.archived);
+  const stats = [
+    { ic: ic.folder, c: "p", v: folders, l: "Folders" },
+    { ic: ic.file, c: "t", v: total, l: "Notes" },
+    { ic: ic.book, c: "a", v: Math.round(words / 100) / 10 + "k", l: "Words" },
+    { ic: ic.star, c: "r", v: pinned, l: "Pinned" },
+    { ic: ic.archive, c: "e", v: archived, l: "Archived" },
+  ];
+  const topics = [["SAP FICO", 68], ["AI & ML", 45], ["Python", 82], ["ERPNext", 20]];
+  return (
+    <div className="content" style={{ paddingTop: 32 }}>
+      <div className="dash-greeting">{hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"} ✦</div>
+      <div className="dash-sub">{total} notes · {folders} folders · {words.toLocaleString()} words written</div>
+      <div className="stats-grid">
+        {stats.map((s, i) => (
+          <div key={i} className="stat-card">
+            <div className={`stat-ic ${s.c}`}><Icon d={s.ic} size={15} /></div>
+            <div className="stat-val">{s.v}</div>
+            <div className="stat-lbl">{s.l}</div>
+          </div>
+        ))}
+      </div>
+      <div className="sec-title">Knowledge Graph</div>
+      <div className="graph-box"><KnowledgeGraph tree={tree} /></div>
+      {pinnedNotes.length > 0 && <>
+        <div className="sec-title">Pinned</div>
+        <div className="notes-grid" style={{ marginBottom: 26 }}>
+          {pinnedNotes.map(([id, note]) => (
+            <div key={id} className="note-card" onClick={() => onOpenNote(id)} style={{ borderColor: "rgba(244,114,182,0.3)", borderLeft: note.color ? `3px solid ${note.color}` : undefined }}>
+              <div className="nc-title"><Icon d={ic.pin} size={11} fill="var(--rose)" stroke="var(--rose)" />{note.title}</div>
+              <div className="nc-preview">{(note.content || "").replace(/[#*`>]/g, "").trim()}</div>
+              <div className="nc-footer"><div className="nc-date">{note.updated}</div><div style={{ display: "flex", gap: 3 }}>{(note.tags || []).slice(0, 2).map(t => <span key={t} className="badge badge-purple">{t}</span>)}</div></div>
+            </div>
+          ))}
+        </div>
+      </>}
+      <div className="sec-title">Recent Notes</div>
+      <div className="notes-grid">
+        {recent.map(([id, note]) => (
+          <div key={id} className="note-card" onClick={() => onOpenNote(id)} style={{ borderLeft: note.color ? `3px solid ${note.color}` : undefined }}>
+            <div className="nc-title">{note.title}</div>
+            <div className="nc-preview">{(note.content || "").replace(/[#*`>]/g, "").trim()}</div>
+            <div className="nc-footer"><div className="nc-date">{note.updated}</div><div style={{ display: "flex", gap: 3 }}>{(note.tags || []).slice(0, 2).map(t => <span key={t} className="badge badge-teal">{t}</span>)}</div></div>
+          </div>
+        ))}
+      </div>
+      <div className="sec-title">Learning Progress</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        {topics.map(([t, p]) => (
+          <div key={t} className="stat-card">
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "var(--t1)", marginBottom: 8 }}>
+              <span>{t}</span><span style={{ color: "var(--accent2)", fontWeight: 600 }}>{p}%</span>
+            </div>
+            <div className="progress-bar"><div className="progress-fill" style={{ width: mounted ? `${p}%` : 0 }} /></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── AI Assistant ──────────────────────────────────────────────────────────────
+function AIAssistant({ notes }) {
+  const [msgs, setMsgs] = useState([{ role: "assistant", content: "Hello! I'm your AI Knowledge Assistant.\n\nI have full access to all your notes — ask me to **summarize**, **explain**, **connect ideas**, or **create a study plan** from any topic.\n\nWhat would you like to explore?" }]);
+  const [input, setInput] = useState(""), [loading, setLoading] = useState(false);
+  const bottomRef = useRef(null);
+  const ctx = Object.entries(notes).map(([_, n]) => `[${n.title}]:\n${(n.content || "").slice(0, 600)}`).join("\n\n---\n\n");
+  const send = useCallback(async text => {
+    if (!text.trim() || loading) return;
+    const um = { role: "user", content: text };
+    setMsgs(m => [...m, um]); setInput(""); setLoading(true);
+    try {
+      const history = [...msgs, um].map(m => ({ role: m.role, content: m.content }));
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1500, system: `You are an AI Knowledge Assistant built into a Personal Knowledge OS. You have full access to the user's notes below. Help them understand, summarize, connect, and study their knowledge.\n\nUser's Notes:\n\n${ctx}\n\nBe helpful, insightful, and concise. Use markdown for formatting.`, messages: history }),
+      });
+      const data = await res.json();
+      setMsgs(m => [...m, { role: "assistant", content: data.content?.map(b => b.text || "").join("") || "No response." }]);
+    } catch { setMsgs(m => [...m, { role: "assistant", content: "⚠️ Connection error. Please try again." }]); }
+    setLoading(false);
+  }, [msgs, loading, ctx]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, loading]);
+  const suggestions = ["Summarize my SAP FICO notes", "What is RAG and how does it work?", "Create a study plan for my Python notes", "Compare LLM and RAG approaches", "What topics should I learn next?", "Find connections between my notes"];
+  return (
+    <div className="chat-wrap">
+      <div className="chat-hdr">
+        <div style={{ width: 30, height: 30, borderRadius: "50%", background: "linear-gradient(135deg,var(--accent),var(--teal))", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Icon d={ic.sparkle} size={15} stroke="#fff" />
+        </div>
+        <div><div className="chat-hdr-title">AI Knowledge Assistant</div><div style={{ fontSize: 11, color: "var(--emerald)" }}>● Powered by Claude · Has access to all your notes</div></div>
+      </div>
+      <div className="chat-msgs">
+        {msgs.map((msg, i) => (
+          <div key={i} className={`cmsg ${msg.role}`}>
+            <div className={`cavatar ${msg.role === "assistant" ? "ai" : "user"}`}>
+              {msg.role === "assistant" ? <Icon d={ic.sparkle} size={13} stroke="#fff" /> : "U"}
+            </div>
+            <div className={`cbubble ${msg.role === "assistant" ? "ai" : "user"}`}
+              dangerouslySetInnerHTML={{ __html: renderMD(msg.content) }} />
+          </div>
+        ))}
+        {loading && (
+          <div className="cmsg assistant">
+            <div className="cavatar ai"><Icon d={ic.sparkle} size={13} stroke="#fff" /></div>
+            <div className="cbubble ai" style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <span className="tdot" /><span className="tdot" /><span className="tdot" />
+            </div>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+      <div className="chat-sugg">
+        <div className="sugg-lbl">Suggestions</div>
+        <div className="sugg-chips">{suggestions.map((s, i) => <span key={i} className="chip" onClick={() => send(s)}>{s}</span>)}</div>
+      </div>
+      <div className="chat-inp-row">
+        <textarea className="chat-ta" rows={1} placeholder="Ask anything about your notes…" value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }} />
+        <button className="chat-send" onClick={() => send(input)}><Icon d={ic.send} size={17} stroke="#fff" /></button>
+      </div>
+    </div>
+  );
+}
+
+// ── GlobalSearch ──────────────────────────────────────────────────────────────
+function GlobalSearch({ notes, tree, onOpenNote }) {
+  const [q, setQ] = useState(""), [filter, setFilter] = useState("all");
+  const all = flattenTree(tree);
+  const hl = t => q.trim() ? t.replace(new RegExp(`(${q.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi"), "<mark>$1</mark>") : t;
+  const results = q.trim().length < 2 ? [] : all.filter(n => {
+    const note = notes[n.id];
+    const match = n.label.toLowerCase().includes(q.toLowerCase()) || (note && ((note.content || "").toLowerCase().includes(q.toLowerCase()) || (note.tags || []).join(" ").toLowerCase().includes(q.toLowerCase())));
+    if (!match) return false;
+    if (filter === "pinned") return note?.pinned;
+    if (filter === "archived") return note?.archived;
+    if (filter === "notes") return n.type === "note";
+    if (filter === "folders") return n.type === "folder";
+    return true;
+  }).slice(0, 15);
+  return (
+    <div className="content" style={{ paddingTop: 28 }}>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 20, fontWeight: 700, color: "var(--t0)", marginBottom: 4 }}>Global Search</div>
+        <div style={{ fontSize: 13, color: "var(--t2)" }}>Search all notes, folders, tags and content</div>
+      </div>
+      <div className="sbar">
+        <Icon d={ic.search} size={18} stroke="var(--t2)" />
+        <input className="sinput" placeholder="Search anything…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
+        {q && <div style={{ cursor: "pointer" }} onClick={() => setQ("")}><Icon d={ic.close} size={16} stroke="var(--t2)" /></div>}
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+        {["all", "notes", "folders", "pinned", "archived"].map(f => (
+          <button key={f} className={`tbtn${filter === f ? " on" : ""}`} onClick={() => setFilter(f)} style={{ fontSize: 12, padding: "4px 10px" }}>
+            {f.charAt(0).toUpperCase() + f.slice(1)}
+          </button>
+        ))}
+        {q.trim().length >= 2 && <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--t2)", alignSelf: "center" }}>{results.length} result{results.length !== 1 ? "s" : ""}</span>}
+      </div>
+      {results.map(node => (
+        <div key={node.id} className="sresult" onClick={() => node.type === "note" && onOpenNote(node.id)}>
+          <div className="sric"><Icon d={node.type === "folder" ? ic.folder : ic.file} size={15} stroke={node.type === "folder" ? "var(--amber)" : "var(--teal)"} /></div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="sr-title" dangerouslySetInnerHTML={{ __html: hl(node.label) }} />
+            <div className="sr-path">{node.path.join(" › ")}</div>
+            {notes[node.id] && <div className="sr-prev" dangerouslySetInnerHTML={{ __html: hl((notes[node.id].content || "").replace(/[#*`>]/g, "").slice(0, 220)) }} />}
+          </div>
+          {notes[node.id]?.pinned && <Icon d={ic.pin} size={12} fill="var(--rose)" stroke="var(--rose)" />}
+        </div>
+      ))}
+      {q.trim().length >= 2 && results.length === 0 && (
+        <div className="empty-state">
+          <div className="empty-ic"><Icon d={ic.search} size={22} stroke="var(--t2)" /></div>
+          <div className="empty-title">No results for "{q}"</div>
+          <div className="empty-sub">Try different keywords or check the filter</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Favorites ─────────────────────────────────────────────────────────────────
+function Favorites({ notes, onOpenNote }) {
+  const pinned = Object.entries(notes).filter(([_, n]) => n.pinned && !n.archived);
+  return (
+    <div className="content" style={{ paddingTop: 28 }}>
+      <div style={{ fontSize: 20, fontWeight: 700, color: "var(--t0)", marginBottom: 4 }}>Pinned Notes</div>
+      <div style={{ fontSize: 13, color: "var(--t2)", marginBottom: 24 }}>{pinned.length} pinned note{pinned.length !== 1 ? "s" : ""}</div>
+      {pinned.length === 0 ? (
+        <div className="empty-state"><div className="empty-ic"><Icon d={ic.star} size={22} stroke="var(--t2)" /></div><div className="empty-title">No pinned notes yet</div><div className="empty-sub">Open a note and click Pin in the toolbar</div></div>
+      ) : (
+        <div className="notes-grid">
+          {pinned.map(([id, note]) => (
+            <div key={id} className="note-card" onClick={() => onOpenNote(id)} style={{ borderColor: "rgba(244,114,182,0.3)", borderLeft: note.color ? `3px solid ${note.color}` : undefined }}>
+              <div className="nc-title"><Icon d={ic.pin} size={11} fill="var(--rose)" stroke="var(--rose)" />{note.title}</div>
+              <div className="nc-preview">{(note.content || "").replace(/[#*`>]/g, "").trim()}</div>
+              <div className="nc-footer"><div className="nc-date">{note.updated}</div></div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Recent ────────────────────────────────────────────────────────────────────
+function Recent({ notes, onOpenNote }) {
+  const sorted = Object.entries(notes).filter(([_, n]) => !n.archived).sort((a, b) => (b[1].updated || "").localeCompare(a[1].updated || ""));
+  return (
+    <div className="content" style={{ paddingTop: 28 }}>
+      <div style={{ fontSize: 20, fontWeight: 700, color: "var(--t0)", marginBottom: 4 }}>Recent Notes</div>
+      <div style={{ fontSize: 13, color: "var(--t2)", marginBottom: 24 }}>All notes sorted by last update</div>
+      <div className="notes-grid">
+        {sorted.map(([id, note]) => (
+          <div key={id} className="note-card" onClick={() => onOpenNote(id)} style={{ borderLeft: note.color ? `3px solid ${note.color}` : undefined }}>
+            <div className="nc-title">{note.pinned && <Icon d={ic.pin} size={11} fill="var(--rose)" stroke="var(--rose)" />}{note.title}</div>
+            <div className="nc-preview">{(note.content || "").replace(/[#*`>]/g, "").trim()}</div>
+            <div className="nc-footer">
+              <div className="nc-date">{note.updated}</div>
+              <div style={{ display: "flex", gap: 3 }}>{(note.tags || []).slice(0, 2).map(t => <span key={t} className="badge badge-teal">{t}</span>)}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Revision ──────────────────────────────────────────────────────────────────
+function Revision({ notes, onOpenNote }) {
+  const due = Object.entries(notes).filter(([_, n]) => !n.archived).slice(0, 5);
+  return (
+    <div className="content" style={{ paddingTop: 28 }}>
+      <div style={{ fontSize: 20, fontWeight: 700, color: "var(--t0)", marginBottom: 4 }}>Revision Queue</div>
+      <div style={{ fontSize: 13, color: "var(--t2)", marginBottom: 24 }}>Spaced repetition · {due.length} notes due today</div>
+      <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
+        {[["Due Today", due.length, "var(--rose)"], ["This Week", 11, "var(--amber)"], ["Mastered", 34, "var(--emerald)"]].map(([l, v, c]) => (
+          <div key={l} className="stat-card" style={{ flex: 1 }}>
+            <div style={{ fontSize: 26, fontWeight: 700, color: c }}>{v}</div>
+            <div className="stat-lbl">{l}</div>
+          </div>
+        ))}
+      </div>
+      <div className="sec-title">Due Now</div>
+      {due.map(([id, note]) => (
+        <div key={id} className="rev-card" onClick={() => onOpenNote(id)}>
+          <div style={{ width: 36, height: 36, borderRadius: 8, background: "rgba(124,106,247,0.15)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Icon d={ic.book} size={18} stroke="var(--accent2)" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--t0)", marginBottom: 3 }}>{note.title}</div>
+            <div style={{ fontSize: 12, color: "var(--t2)" }}>Updated {note.updated} · {Math.max(1, Math.ceil((note.wordCount || 0) / 200))} min</div>
+          </div>
+          <Icon d={ic.chevronRight} size={15} stroke="var(--t2)" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Export ────────────────────────────────────────────────────────────────────
+function Export({ notes, tree }) {
+  const exportAll = () => {
+    const data = JSON.stringify({ tree, notes }, null, 2);
+    const a = document.createElement("a"); a.href = "data:application/json;charset=utf-8," + encodeURIComponent(data);
+    a.download = "knowledge-os-backup-" + new Date().toISOString().split("T")[0] + ".json"; a.click();
+  };
+  const exportMD = () => {
+    const md = Object.values(notes).map(n => `# ${n.title}\n\nTags: ${(n.tags || []).join(", ")}\nCreated: ${n.created} | Updated: ${n.updated}\n\n${n.content}`).join("\n\n---\n\n");
+    const a = document.createElement("a"); a.href = "data:text/markdown;charset=utf-8," + encodeURIComponent(md);
+    a.download = "knowledge-os-notes-" + new Date().toISOString().split("T")[0] + ".md"; a.click();
+  };
+  return (
+    <div className="content" style={{ paddingTop: 28 }}>
+      <div style={{ fontSize: 20, fontWeight: 700, color: "var(--t0)", marginBottom: 4 }}>Export</div>
+      <div style={{ fontSize: 13, color: "var(--t2)", marginBottom: 28 }}>Download your notes in different formats</div>
+      <div className="sec-title">Export Format</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 28 }}>
+        {[
+          { icon: "📦", label: "Full Backup (JSON)", desc: "All notes + folder structure. Use to restore later.", action: exportAll },
+          { icon: "📝", label: "All Notes (Markdown)", desc: "Every note as a single .md file for external use.", action: exportMD },
+        ].map(f => (
+          <div key={f.label} className="stat-card" style={{ cursor: "pointer" }} onClick={f.action}>
+            <div style={{ fontSize: 28, marginBottom: 10 }}>{f.icon}</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--t0)", marginBottom: 6 }}>{f.label}</div>
+            <div style={{ fontSize: 12, color: "var(--t2)", marginBottom: 14 }}>{f.desc}</div>
+            <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }}>
+              <Icon d={ic.download} size={13} stroke="#fff" /> Download
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="sec-title">Stats</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+        {[["Notes", Object.keys(notes).length], ["Folders", flattenTree(tree).filter(n => n.type === "folder").length], ["Words", Object.values(notes).reduce((a, n) => a + (n.wordCount || 0), 0).toLocaleString()]].map(([l, v]) => (
+          <div key={l} className="stat-card"><div className="stat-val">{v}</div><div className="stat-lbl">{l}</div></div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+function Settings({ notes, tree, onReset }) {
+  const [autoSave, setAutoSave] = useState(true);
+  const storageSize = JSON.stringify({ notes, tree }).length;
+  return (
+    <div className="content" style={{ paddingTop: 28 }}>
+      <div style={{ fontSize: 20, fontWeight: 700, color: "var(--t0)", marginBottom: 4 }}>Settings</div>
+      <div style={{ fontSize: 13, color: "var(--t2)", marginBottom: 28 }}>Manage your Knowledge OS preferences</div>
+      <div className="set-grid">
+        <div className="set-group">
+          <div className="set-group-title">Storage</div>
+          {[["Location", "window.storage (Claude Project)"], ["Persistence", "Saved across sessions"], ["Notes", Object.keys(notes).length], ["Size", (storageSize / 1024).toFixed(1) + " KB"]].map(([l, v]) => (
+            <div key={l} className="set-row"><div className="set-lbl">{l}</div><div className="set-val">{v}</div></div>
+          ))}
+          <div style={{ marginTop: 14 }}>
+            <button className="btn btn-danger" style={{ width: "100%", justifyContent: "center" }} onClick={onReset}>
+              <Icon d={ic.trash} size={13} /> Clear All Data
+            </button>
+          </div>
+        </div>
+        <div className="set-group">
+          <div className="set-group-title">Editor</div>
+          <div className="set-row"><div className="set-lbl">Auto Save</div><div className={`toggle${autoSave ? " on" : ""}`} onClick={() => setAutoSave(p => !p)}><div className="toggle-k" /></div></div>
+          <div className="set-row"><div className="set-lbl">Save delay</div><div className="set-val">700ms</div></div>
+          <div className="set-row"><div className="set-lbl">Markdown preview</div><div className="set-val">Toggle in toolbar</div></div>
+        </div>
+        <div className="set-group">
+          <div className="set-group-title">AI Assistant</div>
+          {[["Model", "claude-sonnet-4-6"], ["Max tokens", "1,500"], ["Context", "Full notes"], ["Works in", "Claude.ai Projects"]].map(([l, v]) => (
+            <div key={l} className="set-row"><div className="set-lbl">{l}</div><div className="set-val">{v}</div></div>
+          ))}
+        </div>
+        <div className="set-group">
+          <div className="set-group-title">Shortcuts</div>
+          {[["New Note", "Ctrl+N"], ["New Folder", "Ctrl+Shift+N"], ["Search", "Ctrl+K"], ["Toggle Sidebar", "Ctrl+\\"]].map(([a, k]) => (
+            <div key={a} className="set-row">
+              <div className="set-lbl">{a}</div>
+              <code style={{ fontFamily: "var(--mono)", fontSize: 11, background: "var(--bg3)", padding: "2px 7px", borderRadius: 4, border: "1px solid var(--border)", color: "var(--t1)" }}>{k}</code>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── RightPanel ────────────────────────────────────────────────────────────────
+function RightPanel({ note, noteId, tree, onOpenNote }) {
+  const [aiSummary, setAiSummary] = useState(""); const [loadingSummary, setLoadingSummary] = useState(false);
+  useEffect(() => { setAiSummary(""); }, [noteId]);
+
+  const getSummary = async () => {
+    if (!note?.content) return;
+    setLoadingSummary(true);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 200, messages: [{ role: "user", content: `Summarize this note in 2-3 sentences:\n\n${note.content}` }] }),
+      });
+      const data = await res.json();
+      setAiSummary(data.content?.map(b => b.text || "").join("") || "");
+    } catch { setAiSummary("Could not generate summary."); }
+    setLoadingSummary(false);
+  };
+
+  if (!note) return (
+    <div className="rp-sec">
+      <div className="empty-state" style={{ padding: "40px 16px" }}>
+        <div className="empty-ic"><Icon d={ic.file} size={20} stroke="var(--t2)" /></div>
+        <div className="empty-title">No note open</div>
+        <div className="empty-sub">Open a note to see details</div>
+      </div>
+    </div>
+  );
+
+  const nodePath = (() => { const all = flattenTree(tree); const n = all.find(x => x.id === noteId); return n ? n.path : []; })();
+  const allNotes = flattenTree(tree).filter(n => n.type === "note" && n.id !== noteId).slice(0, 5);
+
+  return (
+    <>
+      <div className="rp-sec">
+        <div className="rp-sec-title">Properties</div>
+        {[["Created", note.created || "—"], ["Updated", note.updated || "—"], ["Words", note.wordCount || 0], ["Read time", `${Math.max(1, Math.ceil((note.wordCount || 0) / 200))} min`], ["Pinned", note.pinned ? "Yes" : "No"], ["Archived", note.archived ? "Yes" : "No"]].map(([k, v]) => (
+          <div key={k} className="rp-row"><span className="rp-key">{k}</span><span style={{ fontSize: 13 }}>{v}</span></div>
+        ))}
+      </div>
+      {nodePath.length > 0 && (
+        <div className="rp-sec">
+          <div className="rp-sec-title">Location</div>
+          <div style={{ fontSize: 12, color: "var(--t2)", lineHeight: 1.6 }}>{nodePath.join(" › ")}</div>
+        </div>
+      )}
+      <div className="rp-sec">
+        <div className="rp-sec-title">Tags</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+          {(note.tags || []).map(t => <span key={t} className="tag">{t}</span>)}
+          {!(note.tags || []).length && <span style={{ fontSize: 12, color: "var(--t2)" }}>No tags</span>}
+        </div>
+      </div>
+      {note.color && (
+        <div className="rp-sec">
+          <div className="rp-sec-title">Color</div>
+          <div style={{ width: 20, height: 20, borderRadius: "50%", background: note.color, border: "1px solid var(--border-hi)" }} />
+        </div>
+      )}
+      {allNotes.length > 0 && (
+        <div className="rp-sec">
+          <div className="rp-sec-title">Other Notes</div>
+          {allNotes.map(n => (
+            <div key={n.id} onClick={() => onOpenNote(n.id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0", cursor: "pointer", fontSize: 12, color: "var(--t1)" }} className="tree-row" onMouseEnter={e => e.currentTarget.style.color = "var(--t0)"} onMouseLeave={e => e.currentTarget.style.color = "var(--t1)"}>
+              <Icon d={ic.file} size={12} stroke="var(--teal)" />{n.label}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="rp-sec">
+        <div className="rp-sec-title" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          AI Summary
+          <button className="ibtn" onClick={getSummary} title="Generate summary" style={{ padding: "2px 4px" }}>
+            <Icon d={ic.sparkle} size={12} stroke="var(--accent2)" />
+          </button>
+        </div>
+        {loadingSummary ? <div style={{ fontSize: 12, color: "var(--t2)" }}>Generating…</div> :
+          aiSummary ? <div className="rp-ai">{aiSummary}</div> :
+            <div style={{ fontSize: 12, color: "var(--t2)" }}>Click ✦ to generate an AI summary</div>}
+      </div>
+    </>
+  );
+}
+
+// ── Main App ──────────────────────────────────────────────────────────────────
+function App() {
+  const [tree, setTree] = useState(null);
+  const [notes, setNotes] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [activeNav, setActiveNav] = useState("dashboard");
+  const [sideCollapsed, setSideCollapsed] = useState(false);
+  const [rightOpen, setRightOpen] = useState(true);
+  const [openNote, setOpenNote] = useState(null);
+  const [selId, setSelId] = useState(null);
+  const [showNewNote, setShowNewNote] = useState(false);
+  const [showNewFolder, setShowNewFolder] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [dialog, setDialog] = useState(null); // { type: "confirm"|"rename", ...props }
+  const toastTimer = useRef(null);
+
+  const [syncStatus, setSyncStatus] = useState("idle");
+  const isInitialLoad = useRef(true); // prevent saving seeds to Drive on first load
+
+  // ── Load: Google Drive first → localStorage → seeds (READ ONLY) ───────────
+  useEffect(() => {
+    (async () => {
+      setSyncStatus("syncing");
+
+      // 1. Try Google Drive first (primary source of truth)
+      try {
+        const driveData = await gdrive.load();
+        if (driveData?.tree && driveData?.notes) {
+          setTree(driveData.tree);
+          setNotes(driveData.notes);
+          // Mirror to local cache for offline use
+          await localCache.set("kos_tree", driveData.tree);
+          await localCache.set("kos_notes", driveData.notes);
+          setSyncStatus("synced");
+          setLoading(false);
+          isInitialLoad.current = false;
+          return;
+        }
+      } catch (e) { console.warn("GDrive load failed:", e); }
+
+      // 2. Try local cache (localStorage or window.storage)
+      const cachedTree = await localCache.load("kos_tree");
+      const cachedNotes = await localCache.load("kos_notes");
+      if (cachedTree && cachedNotes) {
+        setTree(cachedTree);
+        setNotes(cachedNotes);
+        setSyncStatus("error"); // Drive failed but we have local data
+        setLoading(false);
+        isInitialLoad.current = false;
+        return;
+      }
+
+      // 3. Last resort: seeds — but do NOT save these to Drive
+      // User starts fresh, their first real edit will create the Drive file
+      setTree(SEED_TREE);
+      setNotes(SEED_NOTES);
+      setSyncStatus("idle");
+      setLoading(false);
+      isInitialLoad.current = false;
+    })();
+  }, []);
+
+  // ── Save: only after initial load, debounced to Drive ────────────────────
+  const gdriveTimer = useRef(null);
+  const latestData = useRef({ tree: null, notes: null });
+  const hasUserData = useRef(false); // true once user makes a real change
+
+  useEffect(() => {
+    if (!tree || !notes) return;
+    if (isInitialLoad.current) return; // skip saving during load
+
+    latestData.current = { tree, notes };
+    hasUserData.current = true;
+
+    // Always save to local cache immediately
+    localCache.set("kos_tree", tree);
+    localCache.set("kos_notes", notes);
+
+    // Debounce Drive sync — 2.5s after last change
+    clearTimeout(gdriveTimer.current);
+    setSyncStatus("syncing");
+    gdriveTimer.current = setTimeout(async () => {
+      const ok = await gdrive.save(latestData.current);
+      setSyncStatus(ok ? "synced" : "error");
+    }, 2500);
+  }, [tree, notes]);
+
+  // ── Pull latest from Drive (for live sync across devices) ────────────────
+  const isPulling = useRef(false);
+  const pullFromDrive = async (silent = false) => {
+    if (isPulling.current) return;
+    isPulling.current = true;
+    if (!silent) setSyncStatus("syncing");
+    try {
+      const driveData = await gdrive.load();
+      if (driveData?.tree && driveData?.notes) {
+        // Only update if Drive has newer/different data
+        const driveStr = JSON.stringify(driveData);
+        const localStr = JSON.stringify({ tree, notes });
+        if (driveStr !== localStr) {
+          setTree(driveData.tree);
+          setNotes(driveData.notes);
+          await localCache.set("kos_tree", driveData.tree);
+          await localCache.set("kos_notes", driveData.notes);
+          if (!silent) showToast("Synced from Drive", ic.refresh);
+        }
+        setSyncStatus("synced");
+      }
+    } catch (e) { setSyncStatus("error"); }
+    isPulling.current = false;
+  };
+
+  // Auto-refresh from Drive every 30 seconds
+  useEffect(() => {
+    if (!tree || !notes) return;
+    const interval = setInterval(() => {
+      if (!gdriveTimer.current) pullFromDrive(true); // silent refresh if not currently saving
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [tree, notes]);
+
+  const showToast = (msg, icon) => {
+    setToast({ msg, icon }); clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2000);
+  };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const h = e => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "n" && !e.shiftKey) { e.preventDefault(); setShowNewNote(true); }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "N") { e.preventDefault(); setShowNewFolder(true); }
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") { e.preventDefault(); setActiveNav("search"); }
+      if ((e.ctrlKey || e.metaKey) && e.key === "\\") { e.preventDefault(); setSideCollapsed(c => !c); }
+    };
+    window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h);
+  }, []);
+
+  const updateNote = (id, data) => {
+    setNotes(p => ({ ...p, [id]: { ...p[id], ...data } }));
+    if (data.title) setTree(t => updateTreeLabel(t, id, data.title || "Untitled"));
+  };
+
+  const deleteNote = id => {
+    setNotes(p => { const n = { ...p }; delete n[id]; return n; });
+    setTree(t => removeFromTree(t, id));
+    setOpenNote(null); setSelId(null);
+    showToast("Note deleted", ic.trash);
+  };
+
+  const confirmDeleteNote = (id, title) => {
+    setDialog({
+      type: "confirm",
+      title: "Delete note",
+      message: `Delete "${title || "Untitled"}"? This cannot be undone.`,
+      confirmLabel: "Delete",
+      onConfirm: () => { deleteNote(id); setDialog(null); },
+      onCancel: () => setDialog(null),
+    });
+  };
+
+  const createNote = (id, folderId, data) => {
+    setNotes(p => ({ ...p, [id]: data }));
+    setTree(t => addToFolder(t, folderId, { id, label: data.title, type: "note", tags: data.tags || [] }));
+    setOpenNote(id); setSelId(id); setActiveNav("knowledge");
+    showToast("Note created", ic.check);
+  };
+
+  const createFolder = (parentId, folder) => {
+    if (!parentId) { setTree(t => [...t, folder]); }
+    else { setTree(t => addToFolder(t, parentId, folder)); }
+    showToast("Folder created", ic.check);
+  };
+
+  const renameItem = (id, currentLabel, type) => {
+    setDialog({
+      type: "rename", current: currentLabel, itemType: type,
+      onConfirm: newLabel => {
+        setTree(t => updateTreeLabel(t, id, newLabel));
+        if (type === "note") setNotes(p => p[id] ? { ...p, [id]: { ...p[id], title: newLabel } } : p);
+        showToast("Renamed", ic.check);
+        setDialog(null);
+      },
+      onCancel: () => setDialog(null),
+    });
+  };
+
+  const deleteFolder = (id, label) => {
+    setDialog({
+      type: "confirm",
+      title: "Delete folder",
+      message: `Delete "${label}" and all notes inside? This cannot be undone.`,
+      confirmLabel: "Delete",
+      onConfirm: () => {
+        const folder = findNode(tree, id);
+        if (folder) {
+          const inside = flattenTree([folder]);
+          const noteIds = inside.filter(n => n.type === "note").map(n => n.id);
+          setNotes(p => { const next = { ...p }; noteIds.forEach(nid => delete next[nid]); return next; });
+        }
+        setTree(t => removeFromTree(t, id));
+        if (selId === id) { setOpenNote(null); setSelId(null); }
+        showToast("Folder deleted", ic.trash);
+        setDialog(null);
+      },
+      onCancel: () => setDialog(null),
+    });
+  };
+
+  const handleTreeDelete = (id, type, label) => {
+    if (type === "folder") deleteFolder(id, label);
+    else confirmDeleteNote(id, label);
+  };
+
+  const [newNoteFolder, setNewNoteFolder] = useState(null);
+  const handleTreeNewNote = (folderId) => { setNewNoteFolder(folderId); setShowNewNote(true); };
+  const handleTreeNewFolder = (folderId) => { setNewNoteFolder(folderId); setShowNewFolder(true); };
+
+  const [ghost, setGhost] = useState(null); // { label, x, y }
+  const [dropTargetId, setDropTargetId] = useState(null);
+  const dropTargetRef = useRef(null); // always current, no stale closure
+
+  // Global mouse tracking for drag-and-drop
+  useEffect(() => {
+    const onMouseMove = e => {
+      if (!dragState.id) return;
+      window.__mouseDragging = true;
+      setGhost({ label: dragState.label, x: e.clientX, y: e.clientY });
+      // Temporarily hide ghost so elementFromPoint sees what's underneath
+      const ghostEl = document.querySelector("[data-drag-ghost]");
+      if (ghostEl) ghostEl.style.visibility = "hidden";
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      if (ghostEl) ghostEl.style.visibility = "";
+      const row = el?.closest("[data-nodeid]");
+      let target = null;
+      if (row) {
+        const nodeId = row.getAttribute("data-nodeid");
+        const nodeType = row.getAttribute("data-nodetype");
+        if (nodeType === "folder") target = nodeId;
+      }
+      dropTargetRef.current = target;
+      setDropTargetId(target);
+    };
+
+    const onMouseUp = e => {
+      if (!dragState.id) return;
+      const dragId = dragState.id;
+      const targetId = dropTargetRef.current; // always fresh — ref not closure
+      dragState.id = null;
+      dragState.label = null;
+      dropTargetRef.current = null;
+      setGhost(null);
+      setDropTargetId(null);
+      setTimeout(() => { window.__mouseDragging = false; }, 50);
+      if (targetId && targetId !== dragId) {
+        handleMoveRef.current(dragId, targetId);
+      }
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []); // empty deps — ref always current, no stale closure
+
+  const [folderView, setFolderView] = useState(null); // { id, label } of clicked folder
+
+  const handleMoveRef = useRef(null);
+  const handleMove = (dragId, targetFolderId) => {
+    setTree(t => moveNode(t, dragId, targetFolderId));
+    showToast("Moved", ic.check);
+  };
+  handleMoveRef.current = handleMove;
+
+  const handleFolderClick = (folderNode) => {
+    setFolderView(folderNode);
+    setActiveNav("knowledge");
+    setOpenNote(null);
+    setSelId(folderNode.id);
+  };
+
+  const resetAll = () => {
+    setDialog({
+      type: "confirm",
+      title: "Clear all data",
+      message: "Delete ALL notes and folders and reset to defaults? This cannot be undone.",
+      confirmLabel: "Clear everything",
+      onConfirm: async () => {
+        await storage.set("kos_tree", SEED_TREE);
+        await storage.set("kos_notes", SEED_NOTES);
+        setTree(SEED_TREE); setNotes(SEED_NOTES);
+        setOpenNote(null); setSelId(null); setActiveNav("dashboard");
+        showToast("Reset to defaults", ic.refresh);
+        setDialog(null);
+      },
+      onCancel: () => setDialog(null),
+    });
+  };
+
+  const openNote_ = id => { setOpenNote(id); setSelId(id); setActiveNav("knowledge"); };
+
+  const showExplorer = ["knowledge", "recent", "favorites", "dashboard"].includes(activeNav);
+
+  const navItems = [
+    { id: "dashboard", icon: ic.dashboard, label: "Dashboard" },
+    { id: "knowledge", icon: ic.knowledge, label: "Knowledge" },
+    { id: "ai", icon: ic.ai, label: "AI Assistant" },
+    { id: "search", icon: ic.search, label: "Search" },
+    { id: "favorites", icon: ic.star, label: "Favorites" },
+    { id: "recent", icon: ic.recent, label: "Recent" },
+    { id: "revision", icon: ic.calendar, label: "Revision" },
+    { id: "export", icon: ic.export, label: "Export" },
+    { id: "settings", icon: ic.settings, label: "Settings" },
+  ];
+
+  const renderMain = () => {
+    if (!notes || !tree) return null;
+    switch (activeNav) {
+      case "dashboard": return <Dashboard notes={notes} tree={tree} onOpenNote={openNote_} />;
+      case "ai": return <AIAssistant notes={notes} />;
+      case "search": return <GlobalSearch notes={notes} tree={tree} onOpenNote={openNote_} />;
+      case "favorites": return <Favorites notes={notes} onOpenNote={openNote_} />;
+      case "recent": return <Recent notes={notes} onOpenNote={openNote_} />;
+      case "revision": return <Revision notes={notes} onOpenNote={openNote_} />;
+      case "export": return <Export notes={notes} tree={tree} />;
+      case "settings": return <Settings notes={notes} tree={tree} onReset={resetAll} />;
+      case "knowledge":
+        if (openNote && notes[openNote]) {
+          return (
+            <NoteEditor key={openNote} note={notes[openNote]} noteId={openNote} tree={tree}
+              onUpdate={updateNote} onDelete={(id) => confirmDeleteNote(id, notes[id]?.title)} onToast={showToast} />
+          );
+        }
+        if (folderView) {
+          // Show all notes inside this folder
+          const folderNode = findNode(tree, folderView.id);
+          const allInFolder = folderNode ? flattenTree([folderNode]).filter(n => n.type === "note") : [];
+          return (
+            <div className="content" style={{ paddingTop: 28 }}>
+              <div className="breadcrumb">
+                <span onClick={() => setFolderView(null)} style={{ cursor: "pointer" }}>Knowledge</span>
+                <span className="sep"> › </span>
+                <span style={{ color: "var(--t0)" }}>{folderView.label}</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(251,191,36,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Icon d={ic.folderOpen} size={20} stroke="var(--amber)" />
+                </div>
+                <div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: "var(--t0)", letterSpacing: "-0.4px" }}>{folderView.label}</div>
+                  <div style={{ fontSize: 13, color: "var(--t2)", marginTop: 2 }}>{allInFolder.length} note{allInFolder.length !== 1 ? "s" : ""} in this folder</div>
+                </div>
+                <button className="btn btn-primary" style={{ marginLeft: "auto" }} onClick={() => { setNewNoteFolder(folderView.id); setShowNewNote(true); }}>
+                  <Icon d={ic.plus} size={14} stroke="#fff" /> New Note
+                </button>
+              </div>
+              {allInFolder.length === 0 ? (
+                <div className="empty-state" style={{ marginTop: 40 }}>
+                  <div className="empty-ic"><Icon d={ic.file} size={22} stroke="var(--t2)" /></div>
+                  <div className="empty-title">No notes in this folder</div>
+                  <div className="empty-sub">Create a note or drag one here from the explorer</div>
+                </div>
+              ) : (
+                <div className="notes-grid">
+                  {allInFolder.map(n => {
+                    const note = notes[n.id];
+                    if (!note) return null;
+                    return (
+                      <div key={n.id} className="note-card" onClick={() => { setOpenNote(n.id); setSelId(n.id); }}
+                        style={{ borderLeft: note.color ? `3px solid ${note.color}` : undefined }}>
+                        <div className="nc-title">{note.pinned && <Icon d={ic.pin} size={11} fill="var(--rose)" stroke="var(--rose)" />}{note.title}</div>
+                        <div className="nc-preview">{(note.content || "").replace(/[#*`>]/g, "").trim()}</div>
+                        <div className="nc-footer">
+                          <div className="nc-date">{note.updated}</div>
+                          <div style={{ display: "flex", gap: 3 }}>{(note.tags || []).slice(0, 2).map(t => <span key={t} className="badge badge-teal">{t}</span>)}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        }
+        return (
+          <div className="content">
+            <div className="empty-state" style={{ marginTop: 60 }}>
+              <div className="empty-ic"><Icon d={ic.book} size={26} stroke="var(--accent2)" /></div>
+              <div className="empty-title">Select or create a note</div>
+              <div className="empty-sub">Click a folder to see its notes, or click a note to open it</div>
+              <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+                <button className="btn btn-primary" onClick={() => setShowNewNote(true)}>
+                  <Icon d={ic.plus} size={14} stroke="#fff" /> New Note
+                </button>
+                <button className="btn btn-ghost" onClick={() => setActiveNav("search")}>
+                  <Icon d={ic.search} size={14} /> Search
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      default: return null;
+    }
+  };
+
+  if (loading) return (
+    <>
+      <style>{CSS}</style>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", flexDirection: "column", gap: 14, background: "var(--bg0)" }}>
+        <div style={{ width: 44, height: 44, background: "linear-gradient(135deg,var(--accent),var(--teal))", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 24px rgba(124,106,247,0.4)" }}>
+          <Icon d={ic.brain} size={22} stroke="#fff" />
+        </div>
+        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--t0)" }}>Knowledge OS</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--teal)" }}>
+          <div style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--teal)", animation: "pulse 1s infinite" }} />
+          Loading from Google Drive…
+        </div>
+        <div style={{ fontSize: 11, color: "var(--t2)", marginTop: 4 }}>KnowledgeOS/data.json</div>
+      </div>
+    </>
+  );
+
+  const syncInfo = {
+    syncing: { color: "var(--amber)", label: "Syncing to Drive…", dot: "var(--amber)", anim: true },
+    synced:  { color: "var(--emerald)", label: "✓ Saved to Drive", dot: "var(--emerald)", anim: false },
+    error:   { color: "var(--rose)", label: "⚠ Drive offline", dot: "var(--rose)", anim: false },
+    idle:    { color: "var(--t2)", label: "Google Drive", dot: "var(--t2)", anim: false },
+  }[syncStatus] || {};
+
+  return (
+    <>
+      <style>{CSS}</style>
+      {showNewNote && <NewNoteModal tree={tree} defaultFolderId={newNoteFolder} onClose={() => { setShowNewNote(false); setNewNoteFolder(null); }} onCreate={createNote} />}
+      {showNewFolder && <NewFolderModal tree={tree} defaultFolderId={newNoteFolder} onClose={() => { setShowNewFolder(false); setNewNoteFolder(null); }} onCreate={createFolder} />}
+      {dialog?.type === "confirm" && <ConfirmModal title={dialog.title} message={dialog.message} confirmLabel={dialog.confirmLabel} onConfirm={dialog.onConfirm} onCancel={dialog.onCancel} />}
+      {dialog?.type === "rename" && <RenameModal current={dialog.current} type={dialog.itemType} onConfirm={dialog.onConfirm} onCancel={dialog.onCancel} />}
+      {toast && <Toast msg={toast.msg} icon={toast.icon} />}
+      {ghost && <DragGhost label={ghost.label} x={ghost.x} y={ghost.y} />}
+
+      <div className="app">
+        {/* Sidebar */}
+        <div className={`sidebar${sideCollapsed ? " collapsed" : ""}`}>
+          <div className="slogo">
+            <div className="slogo-mark"><Icon d={ic.brain} size={16} stroke="#fff" /></div>
+            <div className="slogo-text">Know<span>ledge</span> OS</div>
+          </div>
+          <div className="snav">
+            {navItems.map(item => (
+              <div key={item.id} className={`nav-item${activeNav === item.id ? " active" : ""}`}
+                onClick={() => { setActiveNav(item.id); if (item.id !== "knowledge") setOpenNote(null); }}>
+                <span style={{ flexShrink: 0 }}><Icon d={item.icon} size={16} /></span>
+                <span className="nav-label">{item.label}</span>
+              </div>
+            ))}
+          </div>
+          <div className="sfooter">
+            <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 8px 5px 10px", borderRadius: 6, background: "var(--glass)", margin: "0 4px 4px" }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: syncInfo.dot, flexShrink: 0, animation: syncInfo.anim ? "pulse 1s infinite" : "none" }} />
+              <span className="nav-label" style={{ fontSize: 11, color: syncInfo.color, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                {syncInfo.label}
+              </span>
+              {/* Manual sync button */}
+              <button onClick={() => pullFromDrive(false)} title="Pull latest from Drive"
+                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t2)", padding: "1px 3px", borderRadius: 4, display: "flex", flexShrink: 0 }}
+                className="nav-label">
+                <Icon d={ic.refresh} size={12} />
+              </button>
+            </div>
+            <button className="new-note-btn" onClick={() => setShowNewNote(true)}>
+              <Icon d={ic.plus} size={15} />
+              <span className="nav-label">New Note</span>
+            </button>
+            <button className="stoggle" onClick={() => setSideCollapsed(c => !c)}>
+              <Icon d={sideCollapsed ? ic.chevronRight : ic.menu} size={15} />
+            </button>
+          </div>
+        </div>
+
+        {/* Explorer */}
+        <div className={`explorer${showExplorer ? "" : " hidden"}`}>
+          <div className="exp-header">
+            <div className="exp-title">Explorer</div>
+            <div className="exp-actions">
+              <button className="ibtn" onClick={() => setShowNewNote(true)} title="New note"><Icon d={ic.plus} size={15} /></button>
+              <button className="ibtn" onClick={() => setShowNewFolder(true)} title="New folder"><Icon d={ic.folderPlus} size={15} /></button>
+            </div>
+          </div>
+          <div className="tree-wrap">
+            {tree.map(node => (
+              <TreeNode key={node.id} node={node} depth={0} selId={selId}
+                onSelect={n => {
+                  if (n._pin) { updateNote(n.id, { pinned: !notes[n.id]?.pinned }); showToast(notes[n.id]?.pinned ? "Unpinned" : "Pinned", ic.pin); return; }
+                  setSelId(n.id); setFolderView(null);
+                  if (notes[n.id]) { setOpenNote(n.id); setActiveNav("knowledge"); }
+                }}
+                onToggle={id => setTree(t => toggleExpand(t, id))}
+                onRename={renameItem}
+                onDelete={handleTreeDelete}
+                onNewNote={handleTreeNewNote}
+                onNewFolder={handleTreeNewFolder}
+                onMove={handleMove}
+                onFolderClick={handleFolderClick}
+                dropTargetId={dropTargetId} />
+            ))}
+          </div>
+        </div>
+
+        {/* Main */}
+        <div className="main">{renderMain()}</div>
+
+        {/* Right Panel */}
+        {activeNav === "knowledge" && (
+          <div className={`rpanel${rightOpen ? "" : " hidden"}`}>
+            {openNote && notes[openNote] ? (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
+                <span style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, color: "var(--t2)" }}>Properties</span>
+                <button className="ibtn" onClick={() => setRightOpen(false)}><Icon d={ic.close} size={14} /></button>
+              </div>
+            ) : null}
+            <RightPanel note={openNote ? notes[openNote] : null} noteId={openNote} tree={tree} onOpenNote={openNote_} />
+          </div>
+        )}
+        {activeNav === "knowledge" && !rightOpen && (
+          <button className="ibtn" style={{ position: "absolute", right: 8, top: 54, background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 6, padding: 6 }}
+            onClick={() => setRightOpen(true)} title="Show properties">
+            <Icon d={ic.eye} size={14} />
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
