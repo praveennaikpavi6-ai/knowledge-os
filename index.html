@@ -7,6 +7,8 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body style="margin:0;padding:0;background:#0a0b0f">
@@ -16,59 +18,57 @@ const { useState, useRef, useEffect, useCallback } = React;
 
 // ── Smart Storage — auto-detects environment ──────────────────────────────────
 // Inside Claude.ai  → window.storage (Claude Project storage)
-// Outside Claude    → Google Apps Script → KnowledgeOS/data.json in Google Drive
+// Outside Claude    → Google Apps Script → Firestore: knowledgeOS/state in Firebase
 // Fallback          → localStorage (if Drive fails outside Claude)
 
-const GAS_URL = "https://script.google.com/macros/s/AKfycbyZhNLRgADIyow5jbl7DeYk8ewjN8tiKNd6_JMeU6RlvJD2YEZrP_ZCZJ8HyT74tbIB/exec";
-
-const IS_CLAUDE = (() => {
-  try { return typeof window.storage !== "undefined" && typeof window.storage.get === "function"; }
-  catch { return false; }
-})();
-
-// Google Drive via Apps Script
-const gdrive = {
-  // JSONP load — bypasses CORS for GET
-  async load() {
-    return new Promise((resolve) => {
-      const cbName = "__kos_cb_" + Date.now();
-      const script = document.createElement("script");
-      const timer = setTimeout(() => { cleanup(); resolve(null); }, 10000);
-      const cleanup = () => { clearTimeout(timer); delete window[cbName]; try { script.remove(); } catch {} };
-      window[cbName] = (data) => { cleanup(); resolve(data?.tree ? data : null); };
-      script.src = GAS_URL + "?callback=" + cbName + "&t=" + Date.now();
-      script.onerror = () => { cleanup(); resolve(null); };
-      document.head.appendChild(script);
-    });
-  },
-
-  // Save via direct fetch POST — works on all browsers including mobile
-  async save(data) {
-    try {
-      const json = JSON.stringify(data);
-      // Try direct fetch first
-      const res = await fetch(GAS_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ json }),
-      });
-      const text = await res.text();
-      return text === "OK" || text.includes("ok");
-    } catch (e) {
-      // Fallback: no-cors (fire and forget)
-      try {
-        await fetch(GAS_URL, {
-          method: "POST",
-          mode: "no-cors",
-          headers: { "Content-Type": "text/plain" },
-          body: JSON.stringify({ json: JSON.stringify(data) }),
-        });
-        return true;
-      } catch { return false; }
-    }
-  }
+const firebaseConfig = {
+  apiKey: "AIzaSyCMS5Lsq3evfeel6hSXXqPFDQzl2RTvTJM",
+  authDomain: "knowledge-os-web1.firebaseapp.com",
+  projectId: "knowledge-os-web1",
+  storageBucket: "knowledge-os-web1.firebasestorage.app",
+  messagingSenderId: "700263841091",
+  appId: "1:700263841091:web:58d6acb2145a83859283f6"
 };
 
+const firestoreStore = (() => {
+  try {
+    const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore(app);
+    const stateRef = db.collection("knowledgeOS").doc("state");
+    return {
+      async load() {
+        const snap = await stateRef.get();
+        const data = snap.exists ? snap.data() : null;
+        return data?.tree && data?.notes ? { tree: data.tree, notes: data.notes } : null;
+      },
+      async save(data) {
+        await stateRef.set({
+          tree: data.tree,
+          notes: data.notes,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        return true;
+      }
+    };
+  } catch (e) {
+    console.warn("Firestore init failed:", e);
+    return {
+      async load() { return null; },
+      async save() { return false; }
+    };
+  }
+})();
+
+// Legacy name kept so the app's existing sync flow can stay unchanged.
+const gdrive = {
+  async load() {
+    return firestoreStore.load();
+  },
+  async save(data) {
+    try { return await firestoreStore.save(data); }
+    catch (e) { console.warn("Firestore save failed:", e); return false; }
+  }
+};
 // Claude window.storage
 const claudeStorage = {
   async load(key) {
@@ -1468,12 +1468,12 @@ function App() {
   const [syncStatus, setSyncStatus] = useState("idle");
   const isInitialLoad = useRef(true); // prevent saving seeds to Drive on first load
 
-  // ── Load: Google Drive first → localStorage → seeds (READ ONLY) ───────────
+  // ── Load: Firebase first → localStorage → seeds (READ ONLY) ───────────
   useEffect(() => {
     (async () => {
       setSyncStatus("syncing");
 
-      // 1. Try Google Drive first (primary source of truth)
+      // 1. Try Firebase first (primary source of truth)
       try {
         const driveData = await gdrive.load();
         if (driveData?.tree && driveData?.notes) {
@@ -1487,7 +1487,7 @@ function App() {
           isInitialLoad.current = false;
           return;
         }
-      } catch (e) { console.warn("GDrive load failed:", e); }
+      } catch (e) { console.warn("Firestore load failed:", e); }
 
       // 2. Try local cache (localStorage or window.storage)
       const cachedTree = await localCache.load("kos_tree");
@@ -1533,10 +1533,11 @@ function App() {
     gdriveTimer.current = setTimeout(async () => {
       const ok = await gdrive.save(latestData.current);
       setSyncStatus(ok ? "synced" : "error");
+      gdriveTimer.current = null;
     }, 2500);
   }, [tree, notes]);
 
-  // ── Pull latest from Drive (for live sync across devices) ────────────────
+  // ── Pull latest from Firebase (for live sync across devices) ────────────────
   const isPulling = useRef(false);
   const pullFromDrive = async (silent = false) => {
     if (isPulling.current) return;
@@ -1553,7 +1554,7 @@ function App() {
           setNotes(driveData.notes);
           await localCache.set("kos_tree", driveData.tree);
           await localCache.set("kos_notes", driveData.notes);
-          if (!silent) showToast("Synced from Drive", ic.refresh);
+          if (!silent) showToast("Synced from Firebase", ic.refresh);
         }
         setSyncStatus("synced");
       }
@@ -1865,18 +1866,18 @@ function App() {
         <div style={{ fontSize: 15, fontWeight: 600, color: "var(--t0)" }}>Knowledge OS</div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--teal)" }}>
           <div style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--teal)", animation: "pulse 1s infinite" }} />
-          Loading from Google Drive…
+          Loading from Firebase...
         </div>
-        <div style={{ fontSize: 11, color: "var(--t2)", marginTop: 4 }}>KnowledgeOS/data.json</div>
+        <div style={{ fontSize: 11, color: "var(--t2)", marginTop: 4 }}>Firestore: knowledgeOS/state</div>
       </div>
     </>
   );
 
   const syncInfo = {
-    syncing: { color: "var(--amber)", label: "Syncing to Drive…", dot: "var(--amber)", anim: true },
-    synced:  { color: "var(--emerald)", label: "✓ Saved to Drive", dot: "var(--emerald)", anim: false },
-    error:   { color: "var(--rose)", label: "⚠ Drive offline", dot: "var(--rose)", anim: false },
-    idle:    { color: "var(--t2)", label: "Google Drive", dot: "var(--t2)", anim: false },
+    syncing: { color: "var(--amber)", label: "Syncing to Firebase...", dot: "var(--amber)", anim: true },
+    synced:  { color: "var(--emerald)", label: "Saved to Firebase", dot: "var(--emerald)", anim: false },
+    error:   { color: "var(--rose)", label: "Firebase offline", dot: "var(--rose)", anim: false },
+    idle:    { color: "var(--t2)", label: "Firebase", dot: "var(--t2)", anim: false },
   }[syncStatus] || {};
 
   return (
@@ -1912,7 +1913,7 @@ function App() {
                 {syncInfo.label}
               </span>
               {/* Manual sync button */}
-              <button onClick={() => pullFromDrive(false)} title="Pull latest from Drive"
+              <button onClick={() => pullFromDrive(false)} title="Pull latest from Firebase"
                 style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t2)", padding: "1px 3px", borderRadius: 4, display: "flex", flexShrink: 0 }}
                 className="nav-label">
                 <Icon d={ic.refresh} size={12} />

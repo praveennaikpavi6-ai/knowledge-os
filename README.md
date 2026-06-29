@@ -6,7 +6,7 @@ Static GitHub Pages build for `knowledge-os-v20.html`.
 
 GitHub Pages can serve the app file faster and more reliably than opening it through Google Drive.
 
-Your note data still syncs through the existing Google Apps Script / Google Drive backend in the HTML file, so save/load speed still depends on that Apps Script endpoint.
+Your note data now syncs through Firebase Firestore at `knowledgeOS/state`.
 
 ## Publish with GitHub website
 
@@ -39,4 +39,6 @@ Then enable Pages from `Settings` -> `Pages` using the `main` branch and `/root`
 
 ## Important
 
-Do not commit private API keys into this repo. This app currently calls Anthropic from the browser, so AI features should use a backend/proxy if you want them to work securely on a public website.
+Firebase web config values are public client config, but your Firestore database must still be protected with sensible Security Rules before sharing the site widely.
+
+Do not commit private AI API keys into this repo. This app currently calls Anthropic from the browser, so AI features should use a backend/proxy if you want them to work securely on a public website.
