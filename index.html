@@ -1701,7 +1701,14 @@ function NoteEditor({ note, noteId, tree, onUpdate, onDelete, onToast, mobileFoc
         </button>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", background: color || "transparent" }}>
+      <div style={{ flex: 1, overflowY: "auto", background: color || "transparent",
+        ...(color ? {
+          '--t0': '#111827', '--t1': '#374151', '--t2': '#6b7280',
+          '--border': 'rgba(0,0,0,0.12)', '--border-hi': 'rgba(0,0,0,0.22)',
+          '--bg3': 'rgba(0,0,0,0.07)', '--bg4': 'rgba(0,0,0,0.12)',
+          '--glass-hi': 'rgba(0,0,0,0.07)', '--accent': '#5b4cf0', '--accent2': '#7c3aed',
+          color: '#111827'
+        } : {}) }}>
         <div className="content">
           {nodePath.length > 0 && (
             <div className="breadcrumb">
