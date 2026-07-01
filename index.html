@@ -425,23 +425,23 @@ body { font-family: var(--font); background: var(--bg0); color: var(--t0); heigh
 .tag:hover { border-color: var(--accent); color: var(--accent2); }
 .tag.add { border-style: dashed; }
 .note-textarea { width: 100%; min-height: 420px; background: transparent; border: none; outline: none; resize: none; color: var(--t1); font-size: 15px; line-height: 1.85; font-family: var(--font); caret-color: var(--accent2); }
-.md-view { min-height: 420px; line-height: 1.85; font-size: 15px; color: var(--t1); }
-.md-view h1 { font-size: 26px; font-weight: 700; color: var(--t0); margin: 20px 0 10px; letter-spacing: -0.5px; }
-.md-view h2 { font-size: 20px; font-weight: 600; color: var(--t0); margin: 18px 0 8px; }
-.md-view h3 { font-size: 16px; font-weight: 600; color: var(--t0); margin: 14px 0 6px; }
-.md-view p { margin-bottom: 12px; }
-.md-view strong { color: var(--t0); font-weight: 600; }
-.md-view em { font-style: italic; color: var(--t1); }
-.md-view code { font-family: var(--mono); font-size: 13px; background: var(--bg3); color: var(--teal); padding: 2px 6px; border-radius: 4px; }
-.md-view pre { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--r); padding: 16px; margin: 14px 0; overflow-x: auto; }
-.md-view pre code { background: none; color: var(--emerald); font-size: 13px; padding: 0; }
-.md-view blockquote { border-left: 3px solid var(--accent); padding: 8px 16px; margin: 14px 0; background: rgba(124,106,247,0.06); color: var(--t1); font-style: normal; }
-.md-view table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14px; }
-.md-view th { background: var(--bg3); color: var(--t0); padding: 9px 13px; text-align: left; font-weight: 600; border: 1px solid var(--border); }
-.md-view td { padding: 8px 13px; border: 1px solid var(--border); color: var(--t1); }
-.md-view ul, .md-view ol { padding-left: 22px; margin-bottom: 12px; }
-.md-view li { margin-bottom: 4px; }
-.md-view a { color: var(--accent2); }
+.md-view, .html-snippet-preview { min-height: 420px; line-height: 1.85; font-size: 15px; color: var(--t1); }
+.md-view h1, .html-snippet-preview h1 { font-size: 26px; font-weight: 700; color: var(--t0); margin: 20px 0 10px; letter-spacing: -0.5px; }
+.md-view h2, .html-snippet-preview h2 { font-size: 20px; font-weight: 600; color: var(--t0); margin: 18px 0 8px; }
+.md-view h3, .html-snippet-preview h3 { font-size: 16px; font-weight: 600; color: var(--t0); margin: 14px 0 6px; }
+.md-view p, .html-snippet-preview p { margin-bottom: 12px; }
+.md-view strong, .html-snippet-preview strong, .md-view b, .html-snippet-preview b { color: var(--t0); font-weight: 600; }
+.md-view em, .html-snippet-preview em, .md-view i, .html-snippet-preview i { font-style: italic; color: var(--t1); }
+.md-view code, .html-snippet-preview code { font-family: var(--mono); font-size: 13px; background: var(--bg3); color: var(--teal); padding: 2px 6px; border-radius: 4px; }
+.md-view pre, .html-snippet-preview pre { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--r); padding: 16px; margin: 14px 0; overflow-x: auto; }
+.md-view pre code, .html-snippet-preview pre code { background: none; color: var(--emerald); font-size: 13px; padding: 0; }
+.md-view blockquote, .html-snippet-preview blockquote { border-left: 3px solid var(--accent); padding: 8px 16px; margin: 14px 0; background: rgba(124,106,247,0.06); color: var(--t1); font-style: normal; }
+.md-view table, .html-snippet-preview table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14px; }
+.md-view th, .html-snippet-preview th { background: var(--bg3); color: var(--t0); padding: 9px 13px; text-align: left; font-weight: 600; border: 1px solid var(--border); }
+.md-view td, .html-snippet-preview td { padding: 8px 13px; border: 1px solid var(--border); color: var(--t1); }
+.md-view ul, .md-view ol, .html-snippet-preview ul, .html-snippet-preview ol { padding-left: 22px; margin-bottom: 12px; }
+.md-view li, .html-snippet-preview li { margin-bottom: 4px; }
+.md-view a, .html-snippet-preview a { color: var(--accent2); }
 
 /* Dashboard */
 .dash-greeting { font-size: 26px; font-weight: 700; color: var(--t0); letter-spacing: -0.4px; margin-bottom: 4px; }
@@ -1363,7 +1363,42 @@ function NoteEditor({ note, noteId, tree, onUpdate, onDelete, onToast, mobileFoc
         ? content : renderMD(content);
       advEditRef.current.innerHTML = html;
       advEditRef.current.focus();
+      try { document.execCommand('defaultParagraphSeparator', false, 'br'); } catch(e) {}
     }
+  }, [advancedEdit]);
+
+  // Paste handler for Advanced Edit — preserves Word formatting, strips garbage
+  useEffect(() => {
+    if (!advancedEdit || !advEditRef.current) return;
+    const el = advEditRef.current;
+    const handlePaste = (e) => {
+      e.preventDefault();
+      const html = e.clipboardData.getData('text/html');
+      const text = e.clipboardData.getData('text/plain');
+      if (html) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const body = doc.body;
+        // Remove Word/browser noise elements
+        body.querySelectorAll('style,script,meta,link,xml').forEach(n => n.remove());
+        body.querySelectorAll('[class^="Mso"],[class*=" Mso"]').forEach(n => { n.removeAttribute('class'); });
+        body.querySelectorAll('*').forEach(node => {
+          const s = node.getAttribute('style') || '';
+          const keep = [];
+          const fw = s.match(/font-weight\s*:\s*([^;]+)/); if (fw) keep.push(`font-weight:${fw[1].trim()}`);
+          const fs = s.match(/font-size\s*:\s*([^;]+)/);   if (fs) keep.push(`font-size:${fs[1].trim()}`);
+          const col = s.match(/(?:^|;)\s*color\s*:\s*([^;]+)/); if (col && !/windowtext|black/i.test(col[1])) keep.push(`color:${col[1].trim()}`);
+          const td = s.match(/text-decoration\s*:\s*([^;]+)/); if (td) keep.push(`text-decoration:${td[1].trim()}`);
+          if (keep.length) node.setAttribute('style', keep.join(';')); else node.removeAttribute('style');
+          node.removeAttribute('lang'); node.removeAttribute('valign');
+        });
+        document.execCommand('insertHTML', false, body.innerHTML);
+      } else {
+        document.execCommand('insertText', false, text);
+      }
+    };
+    el.addEventListener('paste', handlePaste);
+    return () => el.removeEventListener('paste', handlePaste);
   }, [advancedEdit]);
 
   // Reset advanced edit when note changes
@@ -1371,7 +1406,20 @@ function NoteEditor({ note, noteId, tree, onUpdate, onDelete, onToast, mobileFoc
 
   const saveAdvancedEdit = () => {
     if (!advEditRef.current) return;
-    const newContent = advEditRef.current.innerHTML;
+    // Clean up browser-generated div/br wrapping before saving
+    const tmp = document.createElement('div');
+    tmp.innerHTML = advEditRef.current.innerHTML;
+    // Replace standalone <div> wrappers with <p>
+    tmp.querySelectorAll('div').forEach(d => {
+      if (!d.closest('table') && !d.querySelector('table')) {
+        const p = document.createElement('p');
+        p.innerHTML = d.innerHTML;
+        d.replaceWith(p);
+      }
+    });
+    // Remove trailing empty <p> and <br> at end
+    tmp.querySelectorAll('p').forEach(p => { if (!p.textContent.trim() && !p.querySelector('img,br')) p.remove(); });
+    const newContent = tmp.innerHTML;
     setContent(newContent);
     sched(title, newContent, tags, pinned, archived, color);
     setAdvancedEdit(false);
@@ -1388,8 +1436,7 @@ function NoteEditor({ note, noteId, tree, onUpdate, onDelete, onToast, mobileFoc
     }
     if (contentType === "html-snippet") {
       return (
-        <div className="html-snippet-preview"
-          style={{ background: "var(--bg3)", borderRadius: 8, padding: 16, minHeight: 200 }}
+        <div className="md-view"
           dangerouslySetInnerHTML={{ __html: content }} />
       );
     }
@@ -1792,9 +1839,8 @@ function NoteEditor({ note, noteId, tree, onUpdate, onDelete, onToast, mobileFoc
                   <span style={{ fontSize:11, color:"var(--t2)", marginLeft:"auto" }}>Save Changes in toolbar when done</span>
                 </div>
                 <div ref={advEditRef} contentEditable suppressContentEditableWarning
-                  className={contentType === "html-snippet" ? "html-snippet-preview" : "md-view"}
-                  style={{ outline:"2px solid var(--accent)", outlineOffset:3, borderRadius:8, minHeight:300,
-                    ...(contentType === "html-snippet" ? { background:"var(--bg3)", padding:16 } : {}) }} />
+                  className="md-view"
+                  style={{ outline:"2px solid var(--accent)", outlineOffset:3, borderRadius:8, minHeight:300 }} />
               </div>
             ) : renderPreview()
           ) : (
