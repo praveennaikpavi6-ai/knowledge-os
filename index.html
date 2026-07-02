@@ -498,12 +498,13 @@ body { font-family: var(--font); background: var(--bg0); color: var(--t0); heigh
 .sec-title { font-size: 12px; font-weight: 600; color: var(--t1); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
 .sec-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 .notes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap: 12px; margin-bottom: 26px; }
-.note-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); padding: 16px; cursor: pointer; transition: all var(--tr); }
-.note-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 4px 20px rgba(124,106,247,0.12); }
+.note-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); padding: 16px; cursor: pointer; transition: border-color var(--tr), box-shadow var(--tr), transform var(--tr); animation: cardIn .25s ease both; }
+.note-card:hover { border-color: var(--accent); transform: translateY(-3px); box-shadow: 0 8px 28px rgba(124,106,247,0.14); }
 .nc-title { font-size: 13px; font-weight: 600; color: var(--t0); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
-.nc-preview { font-size: 12px; color: var(--t2); line-height: 1.6; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
-.nc-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+.nc-preview { font-size: 12px; color: var(--t2); line-height: 1.65; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.nc-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; gap: 6px; }
 .nc-date { font-size: 10px; color: var(--t2); }
+.nc-wc { font-size: 10px; color: var(--t2); }
 .progress-bar { height: 4px; background: var(--bg4); border-radius: 99px; overflow: hidden; margin-top: 6px; }
 .progress-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg,var(--accent),var(--teal)); transition: width 0.9s cubic-bezier(0.4,0,0.2,1); }
 .graph-box { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); padding: 16px; margin-bottom: 26px; }
@@ -627,6 +628,14 @@ mark { background: rgba(124,106,247,0.3); color: var(--accent2); border-radius: 
 .attachment-meta { font-size: 11px; color: var(--t2); margin-top: 2px; }
 .attachment-actions { display: flex; gap: 4px; flex-shrink: 0; }
 .attachment-empty { padding: 14px 12px; font-size: 12px; color: var(--t2); }
+/* Tag filter bar */
+.tag-filter-bar { padding: 6px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.tag-filter-scroll { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.tag-filter-scroll::-webkit-scrollbar { display: none; }
+.tag-chip { flex-shrink: 0; padding: 3px 9px; border-radius: 99px; font-size: 11px; font-weight: 500; background: var(--bg3); border: 1px solid var(--border); color: var(--t2); cursor: pointer; transition: all var(--tr); white-space: nowrap; font-family: var(--font); }
+.tag-chip:hover { border-color: var(--accent); color: var(--accent2); }
+.tag-chip.active { background: rgba(124,106,247,0.15); border-color: var(--accent); color: var(--accent2); }
+
 /* Format toolbar */
 .fmt-bar { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; padding: 6px 10px; background: var(--bg2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .fmt-btn { background: none; border: none; cursor: pointer; color: var(--t2); padding: 4px 7px; border-radius: 5px; font-size: 12px; font-weight: 600; font-family: var(--font); display: flex; align-items: center; gap: 3px; transition: all var(--tr); white-space: nowrap; }
@@ -642,6 +651,16 @@ mark { background: rgba(124,106,247,0.3); color: var(--accent2); border-radius: 
 .fmt-table-opt { padding: 6px 10px; border-radius: 6px; font-size: 12px; color: var(--t1); cursor: pointer; transition: all var(--tr); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .fmt-table-opt:hover { background: var(--glass-hi); color: var(--t0); }
 .fmt-table-bar { height: 6px; background: var(--accent); border-radius: 2px; opacity: 0.55; }
+
+/* Slash command menu */
+.slash-menu { position: absolute; top: 0; left: 0; z-index: 600; background: var(--bg2); border: 1px solid var(--border-hi); border-radius: 12px; padding: 6px; min-width: 280px; box-shadow: var(--shadow-md); animation: fadeUp .14s ease; }
+.slash-menu-title { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--t2); padding: 4px 8px 6px; }
+.slash-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; cursor: pointer; transition: background var(--tr); }
+.slash-item:hover, .slash-item.sel { background: var(--glass-hi); }
+.slash-item.sel { background: rgba(124,106,247,0.14); }
+.slash-icon { width: 28px; height: 28px; border-radius: 6px; background: var(--bg3); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: var(--t1); flex-shrink: 0; font-family: var(--mono); }
+.slash-label { font-size: 13px; font-weight: 600; color: var(--t0); min-width: 100px; }
+.slash-desc { font-size: 11px; color: var(--t2); }
 
 /* Clickable table cells in preview */
 .md-view td, .md-view th, .html-snippet-preview td, .html-snippet-preview th { cursor: pointer; transition: background 0.15s; }
@@ -685,8 +704,15 @@ mark { background: rgba(124,106,247,0.3); color: var(--accent2); border-radius: 
 }
 
 @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes blink { 0%,80%,100% { opacity: 0; } 40% { opacity: 1; } }
-@keyframes pulse { 0%,100% { opacity:.4; } 50% { opacity:1; } }
+  @keyframes cardIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes blink { 0%,80%,100% { opacity: 0; } 40% { opacity: 1; } }
+  @keyframes pulse { 0%,100% { opacity:.4; } 50% { opacity:1; } }
+  .notes-grid .note-card:nth-child(1) { animation-delay: .03s; }
+  .notes-grid .note-card:nth-child(2) { animation-delay: .06s; }
+  .notes-grid .note-card:nth-child(3) { animation-delay: .09s; }
+  .notes-grid .note-card:nth-child(4) { animation-delay: .12s; }
+  .notes-grid .note-card:nth-child(5) { animation-delay: .15s; }
+  .notes-grid .note-card:nth-child(6) { animation-delay: .18s; }
 `;
 
 // ── Context Menu ──────────────────────────────────────────────────────────────
@@ -1551,6 +1577,115 @@ function NoteEditor({ note, noteId, tree, onUpdate, onDelete, onToast, mobileFoc
     return <div className="md-view" onClick={handlePreviewClick} dangerouslySetInnerHTML={{ __html: renderMD(content) }} />;
   };
 
+  // ── Slash command menu ─────────────────────────────────────────────────────
+  const [slashMenu, setSlashMenu] = useState(null); // { x, y, filter, triggerPos }
+  const slashRef = useRef(null);
+
+  const SLASH_COMMANDS = [
+    { icon: "H1", label: "Heading 1",      desc: "Large section heading",    action: () => insertLine("# ")            },
+    { icon: "H2", label: "Heading 2",      desc: "Medium section heading",   action: () => insertLine("## ")           },
+    { icon: "H3", label: "Heading 3",      desc: "Small section heading",    action: () => insertLine("### ")          },
+    { icon: "—",  label: "Divider",        desc: "Horizontal rule",          action: () => insertLine("---")           },
+    { icon: "•",  label: "Bullet list",    desc: "Unordered list",           action: () => insertLine("- ")            },
+    { icon: "1.", label: "Numbered list",  desc: "Ordered list",             action: () => insertLine("1. ")           },
+    { icon: "☑",  label: "Checklist",      desc: "Interactive to-do items",  action: insertChecklist                    },
+    { icon: ">",  label: "Quote",          desc: "Blockquote",               action: () => insertLine("> ")            },
+    { icon: "<>", label: "Code",           desc: "Inline code span",         action: () => insertFormat("`","`","code") },
+    { icon: "```",label: "Code block",     desc: "Multi-line code block",    action: () => insertFormat("```\n","\n```","code block") },
+    { icon: "⊞",  label: "Table",          desc: "3×2 markdown table",       action: insertTable                        },
+    { icon: "**", label: "Bold",           desc: "Bold text",                action: () => insertFormat("**","**","bold text") },
+    { icon: "_",  label: "Italic",         desc: "Italic text",              action: () => insertFormat("*","*","italic text") },
+  ];
+
+  const slashFiltered = slashMenu
+    ? SLASH_COMMANDS.filter(c =>
+        c.label.toLowerCase().startsWith(slashMenu.filter.toLowerCase()) ||
+        c.desc.toLowerCase().includes(slashMenu.filter.toLowerCase())
+      )
+    : [];
+  const [slashIdx, setSlashIdx] = useState(0);
+
+  const closeSlash = () => setSlashMenu(null);
+
+  const runSlashCommand = (cmd) => {
+    // Delete the slash + any typed filter text from content
+    const ta = textareaRef.current;
+    if (ta && slashMenu) {
+      const pos = ta.selectionStart;
+      const delLen = 1 + slashMenu.filter.length; // "/" + typed chars
+      const newText = content.slice(0, slashMenu.triggerPos) + content.slice(slashMenu.triggerPos + delLen);
+      setContent(newText);
+      // Set cursor before running action so insertLine/insertFormat use right position
+      ta.setSelectionRange(slashMenu.triggerPos, slashMenu.triggerPos);
+      setTimeout(() => {
+        cmd.action();
+      }, 0);
+    } else {
+      cmd.action();
+    }
+    closeSlash();
+  };
+
+  // Close slash menu on outside click
+  useEffect(() => {
+    if (!slashMenu) return;
+    const h = (e) => { if (!slashRef.current?.contains(e.target)) closeSlash(); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [slashMenu]);
+
+  const handleTextareaKeyDown = (e) => {
+    if (slashMenu) {
+      const filtered = SLASH_COMMANDS.filter(c =>
+        c.label.toLowerCase().startsWith(slashMenu.filter.toLowerCase()) ||
+        c.desc.toLowerCase().includes(slashMenu.filter.toLowerCase())
+      );
+      if (e.key === "ArrowDown") { e.preventDefault(); setSlashIdx(i => Math.min(i + 1, filtered.length - 1)); return; }
+      if (e.key === "ArrowUp")   { e.preventDefault(); setSlashIdx(i => Math.max(i - 1, 0)); return; }
+      if (e.key === "Enter" && !e.nativeEvent?.isComposing) {
+        e.preventDefault();
+        if (filtered[slashIdx]) runSlashCommand(filtered[slashIdx]);
+        return;
+      }
+      if (e.key === "Escape") { e.preventDefault(); closeSlash(); return; }
+    }
+  };
+
+  const handleTextareaChange = (e) => {
+    const val = e.target.value;
+    setContent(val);
+    sched(title, val, tags, pinned, archived, color);
+
+    // Slash command trigger
+    const pos = e.target.selectionStart;
+    const textBefore = val.slice(0, pos);
+    const lineStart = textBefore.lastIndexOf("\n") + 1;
+    const lineText = textBefore.slice(lineStart);
+    const slashMatch = lineText.match(/^\/(\w*)$/);
+    if (slashMatch) {
+      // Position the menu near the cursor
+      const ta = e.target;
+      const rect = ta.getBoundingClientRect();
+      setSlashIdx(0);
+      setSlashMenu({
+        x: rect.left + 20,
+        y: rect.top + 20,
+        filter: slashMatch[1],
+        triggerPos: lineStart,
+      });
+    } else {
+      // Update filter if already open
+      if (slashMenu) {
+        const slashMatch2 = lineText.match(/^\/(\w*)/);
+        if (slashMatch2) {
+          setSlashMenu(m => ({ ...m, filter: slashMatch2[1] }));
+        } else {
+          closeSlash();
+        }
+      }
+    }
+  };
+
   const [tagInput, setTagInput] = useState(false);
   const [tagVal, setTagVal] = useState("");
   const addTag = () => setTagInput(true);
@@ -1962,20 +2097,55 @@ function NoteEditor({ note, noteId, tree, onUpdate, onDelete, onToast, mobileFoc
               </div>
             ) : renderPreview()
           ) : (
-            <textarea ref={textareaRef} className="note-textarea" value={content}
-              placeholder={"Start writing…\n\nUse the toolbar above to format, or type Markdown:\n# Heading  **bold**  `code`\n- Bullet list  > Blockquote"}
-              onChange={e => { setContent(e.target.value); sched(title, e.target.value, tags, pinned, archived, color); }} />
+            <div style={{ position: "relative" }}>
+              {slashMenu && slashFiltered.length > 0 && (
+                <div ref={slashRef} className="slash-menu">
+                  <div className="slash-menu-title">Commands</div>
+                  {slashFiltered.map((cmd, i) => (
+                    <div key={cmd.label}
+                      className={`slash-item${i === slashIdx ? " sel" : ""}`}
+                      onMouseDown={e => { e.preventDefault(); runSlashCommand(cmd); }}>
+                      <span className="slash-icon">{cmd.icon}</span>
+                      <span className="slash-label">{cmd.label}</span>
+                      <span className="slash-desc">{cmd.desc}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <textarea ref={textareaRef} className="note-textarea" value={content}
+                placeholder={"Start writing…\n\nType / for commands, or use the toolbar above:\n# Heading  **bold**  `code`\n- Bullet  ☑ Checklist  > Quote"}
+                onChange={handleTextareaChange}
+                onKeyDown={handleTextareaKeyDown} />
+            </div>
           )}
         </div>
       </div>
-      <div className="word-count-bar">
-        <span>{words} words</span>
-        <span>·</span>
-        <span>{content.length} chars</span>
-        <span>·</span>
-        <span>{Math.max(1, Math.ceil(words / 200))} min read</span>
-        {!saved && <span style={{ marginLeft: "auto", color: "var(--amber)" }}>● Unsaved changes</span>}
-      </div>
+      {(() => {
+        const taskMatches = [...content.matchAll(/^- \[([ xX])\] /gm)];
+        const totalTasks = taskMatches.length;
+        const doneTasks = taskMatches.filter(m => m[1].toLowerCase() === "x").length;
+        return (
+          <div className="word-count-bar">
+            <span>{words} words</span>
+            <span>·</span>
+            <span>{content.length} chars</span>
+            <span>·</span>
+            <span>{Math.max(1, Math.ceil(words / 200))} min read</span>
+            {totalTasks > 0 && (
+              <>
+                <span>·</span>
+                <span style={{ color: doneTasks === totalTasks ? "var(--emerald)" : "var(--t2)" }}>
+                  {doneTasks}/{totalTasks} tasks
+                </span>
+                <div style={{ flex: 1, maxWidth: 80, height: 4, background: "var(--bg4)", borderRadius: 99, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${(doneTasks / totalTasks) * 100}%`, background: doneTasks === totalTasks ? "var(--emerald)" : "var(--accent)", borderRadius: 99, transition: "width 0.4s ease" }} />
+                </div>
+              </>
+            )}
+            {!saved && <span style={{ marginLeft: "auto", color: "var(--amber)" }}>● Unsaved</span>}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -2120,54 +2290,129 @@ function AIAssistant({ notes }) {
 
 // ── GlobalSearch ──────────────────────────────────────────────────────────────
 function GlobalSearch({ notes, tree, onOpenNote }) {
-  const [q, setQ] = useState(""), [filter, setFilter] = useState("all");
+  const [q, setQ] = useState(""), [filter, setFilter] = useState("all"), [tagFilter, setTagFilter] = useState(null);
+  const inputRef = React.useRef(null);
   const all = flattenTree(tree);
-  const hl = t => q.trim() ? t.replace(new RegExp(`(${q.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi"), "<mark>$1</mark>") : t;
+
+  const allTags = [...new Set(Object.values(notes || {}).flatMap(n => n.tags || []))].sort();
+
+  const hl = t => q.trim()
+    ? t.replace(new RegExp(`(${q.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi"), "<mark>$1</mark>")
+    : t;
+
+  // Smart snippet: find the sentence/window around the first match
+  const snippet = (content, maxLen = 240) => {
+    const clean = (content || "").replace(/[#*`>~\[\]]/g, "").replace(/\n+/g, " ").trim();
+    if (!q.trim()) return clean.slice(0, maxLen);
+    const idx = clean.toLowerCase().indexOf(q.toLowerCase());
+    if (idx === -1) return clean.slice(0, maxLen);
+    const start = Math.max(0, idx - 80);
+    const end = Math.min(clean.length, idx + maxLen - 80);
+    return (start > 0 ? "…" : "") + clean.slice(start, end) + (end < clean.length ? "…" : "");
+  };
+
   const results = q.trim().length < 2 ? [] : all.filter(n => {
     const note = notes[n.id];
-    const match = n.label.toLowerCase().includes(q.toLowerCase()) || (note && ((note.content || "").toLowerCase().includes(q.toLowerCase()) || (note.tags || []).join(" ").toLowerCase().includes(q.toLowerCase())));
-    if (!match) return false;
+    const matchQ = n.label.toLowerCase().includes(q.toLowerCase()) ||
+      (note && ((note.content || "").toLowerCase().includes(q.toLowerCase()) ||
+        (note.tags || []).join(" ").toLowerCase().includes(q.toLowerCase())));
+    if (!matchQ) return false;
     if (filter === "pinned") return note?.pinned;
     if (filter === "archived") return note?.archived;
     if (filter === "notes") return n.type === "note";
     if (filter === "folders") return n.type === "folder";
+    if (tagFilter) return (note?.tags || []).includes(tagFilter);
     return true;
-  }).slice(0, 15);
+  }).slice(0, 20);
+
+  // Keyboard shortcut: focus search on Ctrl/Cmd+K (already wired in App, but autofocus on mount too)
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
   return (
-    <div className="content" style={{ paddingTop: 28 }}>
+    <div className="content" style={{ paddingTop: 28, maxWidth: 720 }}>
       <div style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 20, fontWeight: 700, color: "var(--t0)", marginBottom: 4 }}>Global Search</div>
-        <div style={{ fontSize: 13, color: "var(--t2)" }}>Search all notes, folders, tags and content</div>
+        <div style={{ fontSize: 22, fontWeight: 700, color: "var(--t0)", letterSpacing: "-0.4px", marginBottom: 4 }}>Search</div>
+        <div style={{ fontSize: 13, color: "var(--t2)" }}>Search across all notes, folders, tags and content</div>
       </div>
-      <div className="sbar">
+
+      {/* Search bar */}
+      <div className="sbar" style={{ marginBottom: 12 }}>
         <Icon d={ic.search} size={18} stroke="var(--t2)" />
-        <input className="sinput" placeholder="Search anything…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
-        {q && <div style={{ cursor: "pointer" }} onClick={() => setQ("")}><Icon d={ic.close} size={16} stroke="var(--t2)" /></div>}
+        <input ref={inputRef} className="sinput" placeholder="Search anything… (Ctrl+K)" value={q} onChange={e => setQ(e.target.value)} />
+        {q && <button style={{ background:"none",border:"none",cursor:"pointer",padding:0,display:"flex" }} onClick={() => setQ("")}><Icon d={ic.close} size={16} stroke="var(--t2)" /></button>}
       </div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+
+      {/* Filter row */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
         {["all", "notes", "folders", "pinned", "archived"].map(f => (
-          <button key={f} className={`tbtn${filter === f ? " on" : ""}`} onClick={() => setFilter(f)} style={{ fontSize: 12, padding: "4px 10px" }}>
+          <button key={f} className={`tag-chip${filter === f ? " active" : ""}`} onClick={() => setFilter(f)}>
             {f.charAt(0).toUpperCase() + f.slice(1)}
           </button>
         ))}
-        {q.trim().length >= 2 && <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--t2)", alignSelf: "center" }}>{results.length} result{results.length !== 1 ? "s" : ""}</span>}
+        {q.trim().length >= 2 && (
+          <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--t2)" }}>
+            {results.length} result{results.length !== 1 ? "s" : ""}
+          </span>
+        )}
       </div>
-      {results.map(node => (
-        <div key={node.id} className="sresult" onClick={() => node.type === "note" && onOpenNote(node.id)}>
-          <div className="sric"><Icon d={node.type === "folder" ? ic.folder : ic.file} size={15} stroke={node.type === "folder" ? "var(--amber)" : "var(--teal)"} /></div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="sr-title" dangerouslySetInnerHTML={{ __html: hl(node.label) }} />
-            <div className="sr-path">{node.path.join(" › ")}</div>
-            {notes[node.id] && <div className="sr-prev" dangerouslySetInnerHTML={{ __html: hl((notes[node.id].content || "").replace(/[#*`>]/g, "").slice(0, 220)) }} />}
-          </div>
-          {notes[node.id]?.pinned && <Icon d={ic.pin} size={12} fill="var(--rose)" stroke="var(--rose)" />}
+
+      {/* Tag chips */}
+      {allTags.length > 0 && (
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 16 }}>
+          {allTags.map(t => (
+            <button key={t} className={`tag-chip${tagFilter === t ? " active" : ""}`}
+              onClick={() => setTagFilter(tf => tf === t ? null : t)}>
+              #{t}
+            </button>
+          ))}
         </div>
-      ))}
+      )}
+
+      {/* Results */}
+      {results.map(node => {
+        const note = notes[node.id];
+        return (
+          <div key={node.id} className="sresult" onClick={() => node.type === "note" && onOpenNote(node.id)}>
+            <div className="sric">
+              <Icon d={node.type === "folder" ? ic.folder : ic.file} size={15}
+                stroke={node.type === "folder" ? "var(--amber)" : "var(--teal)"} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                <div className="sr-title" dangerouslySetInnerHTML={{ __html: hl(node.label) }} />
+                {note?.pinned && <Icon d={ic.pin} size={11} fill="var(--rose)" stroke="var(--rose)" />}
+                {(note?.tags || []).map(t => (
+                  <span key={t} className="badge badge-teal" style={{ fontSize: 10 }}>{t}</span>
+                ))}
+              </div>
+              <div className="sr-path">{node.path.join(" › ")}</div>
+              {note && (
+                <div className="sr-prev" dangerouslySetInnerHTML={{ __html: hl(snippet(note.content)) }} />
+              )}
+              {note && (
+                <div style={{ display: "flex", gap: 10, marginTop: 4, fontSize: 10, color: "var(--t2)" }}>
+                  {note.updated && <span>Updated {note.updated}</span>}
+                  {note.wordCount > 0 && <span>{note.wordCount} words</span>}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
       {q.trim().length >= 2 && results.length === 0 && (
         <div className="empty-state">
           <div className="empty-ic"><Icon d={ic.search} size={22} stroke="var(--t2)" /></div>
-          <div className="empty-title">No results for "{q}"</div>
-          <div className="empty-sub">Try different keywords or check the filter</div>
+          <div className="empty-title">No results for &ldquo;{q}&rdquo;</div>
+          <div className="empty-sub">Try different keywords, remove filters, or check spelling</div>
+        </div>
+      )}
+
+      {q.trim().length < 2 && (
+        <div className="empty-state" style={{ paddingTop: 40 }}>
+          <div className="empty-ic"><Icon d={ic.search} size={22} stroke="var(--t2)" /></div>
+          <div className="empty-title">Type to search</div>
+          <div className="empty-sub">Search across titles, content, and tags. Use filters to narrow down.</div>
         </div>
       )}
     </div>
@@ -2186,10 +2431,13 @@ function Favorites({ notes, onOpenNote }) {
       ) : (
         <div className="notes-grid">
           {pinned.map(([id, note]) => (
-            <div key={id} className="note-card" onClick={() => onOpenNote(id)} style={{ borderColor: "rgba(244,114,182,0.3)", borderLeft: note.color ? `3px solid ${note.color}` : undefined }}>
+            <div key={id} className="note-card" onClick={() => onOpenNote(id)} style={{ borderLeft: note.color ? `3px solid ${note.color}` : "3px solid var(--rose)" }}>
               <div className="nc-title"><Icon d={ic.pin} size={11} fill="var(--rose)" stroke="var(--rose)" />{note.title}</div>
-              <div className="nc-preview">{(note.content || "").replace(/[#*`>]/g, "").trim()}</div>
-              <div className="nc-footer"><div className="nc-date">{note.updated}</div></div>
+              <div className="nc-preview">{(note.content || "").replace(/[#*`>~\[\]]/g, "").trim()}</div>
+              <div className="nc-footer">
+                <div className="nc-date">{note.updated}</div>
+                {(note.tags || []).length > 0 && <div style={{ display:"flex", gap:3 }}>{note.tags.slice(0,2).map(t => <span key={t} className="badge badge-teal">{t}</span>)}</div>}
+              </div>
             </div>
           ))}
         </div>
@@ -2209,10 +2457,13 @@ function Recent({ notes, onOpenNote }) {
         {sorted.map(([id, note]) => (
           <div key={id} className="note-card" onClick={() => onOpenNote(id)} style={{ borderLeft: note.color ? `3px solid ${note.color}` : undefined }}>
             <div className="nc-title">{note.pinned && <Icon d={ic.pin} size={11} fill="var(--rose)" stroke="var(--rose)" />}{note.title}</div>
-            <div className="nc-preview">{(note.content || "").replace(/[#*`>]/g, "").trim()}</div>
+            <div className="nc-preview">{(note.content || "").replace(/[#*`>~\[\]]/g, "").trim()}</div>
             <div className="nc-footer">
               <div className="nc-date">{note.updated}</div>
-              <div style={{ display: "flex", gap: 3 }}>{(note.tags || []).slice(0, 2).map(t => <span key={t} className="badge badge-teal">{t}</span>)}</div>
+              <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+                {note.wordCount > 0 && <span className="nc-wc">{note.wordCount}w</span>}
+                {(note.tags || []).slice(0, 2).map(t => <span key={t} className="badge badge-teal">{t}</span>)}
+              </div>
             </div>
           </div>
         ))}
@@ -2706,6 +2957,7 @@ function App() {
   }, []); // empty deps — ref always current, no stale closure
 
   const [folderView, setFolderView] = useState(null); // { id, label } of clicked folder
+  const [activeTag, setActiveTag] = useState(null); // tag filter for explorer
 
   const handleMoveRef = useRef(null);
   const handleMove = (dragId, targetFolderId) => {
@@ -2934,23 +3186,58 @@ function App() {
               <button className="ibtn" onClick={() => setShowNewFolder(true)} title="New folder"><Icon d={ic.folderPlus} size={15} /></button>
             </div>
           </div>
+          {/* Tag filter bar */}
+          {(() => {
+            const allTags = [...new Set(Object.values(notes || {}).flatMap(n => n.tags || []))].sort();
+            if (!allTags.length) return null;
+            return (
+              <div className="tag-filter-bar">
+                <div className="tag-filter-scroll">
+                  <button className={`tag-chip${!activeTag ? " active" : ""}`} onClick={() => setActiveTag(null)}>All</button>
+                  {allTags.map(t => (
+                    <button key={t} className={`tag-chip${activeTag === t ? " active" : ""}`} onClick={() => setActiveTag(at => at === t ? null : t)}>{t}</button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
           <div className="tree-wrap">
-            {tree.map(node => (
-              <TreeNode key={node.id} node={node} depth={0} selId={selId}
-                onSelect={n => {
-                  if (n._pin) { updateNote(n.id, { pinned: !notes[n.id]?.pinned }); showToast(notes[n.id]?.pinned ? "Unpinned" : "Pinned", ic.pin); return; }
-                  setSelId(n.id); setFolderView(null);
-                  if (notes[n.id]) { setOpenNote(n.id); setActiveNav("knowledge"); setMobileNoteFocus(true); }
-                }}
-                onToggle={id => setTree(t => toggleExpand(t, id))}
-                onRename={renameItem}
-                onDelete={handleTreeDelete}
-                onNewNote={handleTreeNewNote}
-                onNewFolder={handleTreeNewFolder}
-                onMove={handleMove}
-                onFolderClick={handleFolderClick}
-                dropTargetId={dropTargetId} />
-            ))}
+            {activeTag ? (
+              // Tag-filtered flat list of notes
+              (() => {
+                const tagged = Object.entries(notes || {})
+                  .filter(([_, n]) => (n.tags || []).includes(activeTag) && !n.archived)
+                  .sort((a, b) => (b[1].updated || "").localeCompare(a[1].updated || ""));
+                return tagged.length === 0 ? (
+                  <div style={{ padding: "18px 10px", fontSize: 12, color: "var(--t2)", textAlign: "center" }}>No notes tagged "{activeTag}"</div>
+                ) : tagged.map(([id, note]) => (
+                  <div key={id}
+                    className={`tree-row${selId === id ? " sel" : ""}`}
+                    onClick={() => { setSelId(id); setFolderView(null); setOpenNote(id); setActiveNav("knowledge"); setMobileNoteFocus(true); }}>
+                    <Icon d={ic.file} size={13} stroke="var(--teal)" style={{ flexShrink: 0 }} />
+                    <span className="tree-lbl">{note.title || "Untitled"}</span>
+                    {note.pinned && <Icon d={ic.pin} size={10} fill="var(--rose)" stroke="var(--rose)" />}
+                  </div>
+                ));
+              })()
+            ) : (
+              tree.map(node => (
+                <TreeNode key={node.id} node={node} depth={0} selId={selId}
+                  onSelect={n => {
+                    if (n._pin) { updateNote(n.id, { pinned: !notes[n.id]?.pinned }); showToast(notes[n.id]?.pinned ? "Unpinned" : "Pinned", ic.pin); return; }
+                    setSelId(n.id); setFolderView(null);
+                    if (notes[n.id]) { setOpenNote(n.id); setActiveNav("knowledge"); setMobileNoteFocus(true); }
+                  }}
+                  onToggle={id => setTree(t => toggleExpand(t, id))}
+                  onRename={renameItem}
+                  onDelete={handleTreeDelete}
+                  onNewNote={handleTreeNewNote}
+                  onNewFolder={handleTreeNewFolder}
+                  onMove={handleMove}
+                  onFolderClick={handleFolderClick}
+                  dropTargetId={dropTargetId} />
+              ))
+            )}
           </div>
         </div>
 
