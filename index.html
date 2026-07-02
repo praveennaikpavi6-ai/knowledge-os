@@ -631,15 +631,21 @@ mark { background: rgba(124,106,247,0.3); color: var(--accent2); border-radius: 
 .attachment-name { font-size: 13px; color: var(--t0); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attachment-meta { font-size: 11px; color: var(--t2); margin-top: 2px; }
 .attachment-actions { display: flex; gap: 4px; flex-shrink: 0; }
-.attachment-empty { padding: 14px 12px; font-size: 12px; color: var(--t2); }
-.att-count { background: var(--bg4); border: 1px solid var(--border); border-radius: 99px; font-size: 10px; font-weight: 700; padding: 1px 6px; color: var(--t2); }
-.att-icon { flex-shrink: 0; width: 32px; height: 32px; border-radius: 8px; background: var(--bg3); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; }
-.att-dropzone { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 28px 16px; cursor: pointer; transition: background var(--tr), border-color var(--tr); border: 2px dashed var(--border); border-radius: 8px; margin: 10px; text-align: center; }
-.att-dropzone:hover, .att-dropzone.over { background: rgba(124,106,247,0.07); border-color: var(--accent); }
-.att-drop-label { font-size: 13px; font-weight: 500; color: var(--t1); }
-.att-drop-sub { font-size: 11px; color: var(--t2); }
-.att-progress-wrap { height: 3px; background: var(--bg4); border-radius: 99px; margin-top: 5px; overflow: hidden; }
-.att-progress-bar { height: 100%; background: var(--accent); border-radius: 99px; transition: width 0.2s ease; }
+/* Attachment popover */
+.att-popover { position: absolute; top: calc(100% + 6px); right: 0; z-index: 700; background: var(--bg2); border: 1px solid var(--border-hi); border-radius: 12px; width: 320px; box-shadow: var(--shadow-md); animation: fadeUp .14s ease; overflow: hidden; }
+.att-pop-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.att-pop-title { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--t1); flex: 1; }
+.att-row { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-bottom: 1px solid var(--border); transition: background var(--tr); }
+.att-row:last-child { border-bottom: none; }
+.att-row:hover { background: var(--glass); }
+.att-file-icon { flex-shrink: 0; width: 28px; height: 28px; border-radius: 6px; background: var(--bg3); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; }
+.att-row-main { flex: 1; min-width: 0; }
+.att-row-name { font-size: 12px; font-weight: 500; color: var(--t0); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.att-row-meta { font-size: 10px; color: var(--t2); margin-top: 1px; }
+.att-empty { display: flex; align-items: center; gap: 8px; padding: 16px 12px; font-size: 12px; color: var(--t2); cursor: pointer; transition: background var(--tr); }
+.att-empty:hover { background: var(--glass); }
+.att-progress-wrap { height: 3px; background: var(--bg4); border-radius: 99px; margin-top: 4px; overflow: hidden; }
+.att-progress-bar { height: 100%; background: var(--accent); border-radius: 99px; transition: width 0.25s ease; }
 /* Tag filter bar */
 .tag-filter-bar { padding: 6px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .tag-filter-scroll { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
@@ -1914,6 +1920,10 @@ function NoteEditor({ note, noteId, tree, onUpdate, onDelete, onToast, mobileFoc
         )}
         <button className="tbtn" onClick={copyContent}><Icon d={ic.copy} size={13} /> Copy</button>
         <button className="tbtn" onClick={exportHTML}><Icon d={ic.export} size={13} /> Export HTML</button>
+        <NoteAttachments
+          noteId={noteId}
+          attachments={note?.attachments || []}
+          onUpdate={atts => onUpdate(noteId, { attachments: atts })} />
         <button className="tbtn danger" onClick={() => onDelete(noteId)}>
           <Icon d={ic.trash} size={13} /> Delete
         </button>
@@ -2158,33 +2168,28 @@ function NoteEditor({ note, noteId, tree, onUpdate, onDelete, onToast, mobileFoc
           </div>
         );
       })()}
-      {/* Reference Documents */}
-      <div style={{ padding: "0 48px 32px" }}>
-        <NoteAttachments
-          noteId={noteId}
-          attachments={note?.attachments || []}
-          onUpdate={atts => onUpdate(noteId, { attachments: atts })} />
-      </div>
+
     </div>
   );
 }
 
-// ── NoteAttachments ───────────────────────────────────────────────────────────
+// ── NoteAttachments — compact popover version ─────────────────────────────────
 function NoteAttachments({ noteId, attachments, onUpdate }) {
-  const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState({}); // { filename: 0-100 }
-  const [dragOver, setDragOver] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [progress, setProgress] = useState({});
   const [error, setError] = useState(null);
   const fileInputRef = useRef(null);
-
+  const popoverRef = useRef(null);
   const MAX_FILE_MB = 50;
+  const list = attachments || [];
 
-  const fileIcon = (type, name) => {
-    const ext = (name || "").split(".").pop().toLowerCase();
-    if (type.startsWith("image/")) return ic.file;
-    if (ext === "pdf" || type === "application/pdf") return ic.filePdf;
-    return ic.file;
-  };
+  // Close popover on outside click
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => { if (!popoverRef.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
 
   const fileColor = (type, name) => {
     const ext = (name || "").split(".").pop().toLowerCase();
@@ -2198,143 +2203,114 @@ function NoteAttachments({ noteId, attachments, onUpdate }) {
 
   const formatSize = (bytes) => {
     if (!bytes) return "";
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " KB";
     return (bytes / (1024 * 1024)).toFixed(1) + " MB";
-  };
-
-  const formatDate = (iso) => {
-    if (!iso) return "";
-    try { return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); } catch { return ""; }
   };
 
   const uploadFiles = async (files) => {
     if (!files || files.length === 0) return;
     setError(null);
     const oversized = [...files].find(f => f.size > MAX_FILE_MB * 1024 * 1024);
-    if (oversized) { setError(`"${oversized.name}" exceeds the ${MAX_FILE_MB} MB limit.`); return; }
-
-    setUploading(true);
-    const newAttachments = [...(attachments || [])];
+    if (oversized) { setError(`"${oversized.name}" exceeds ${MAX_FILE_MB} MB`); return; }
+    const newList = [...list];
     for (const file of [...files]) {
-      setProgress(p => ({ ...p, [file.name]: 0 }));
+      setProgress(p => ({ ...p, [file.name]: 5 }));
       try {
-        // Simulate progress ticks while uploading
-        const tickInterval = setInterval(() => {
-          setProgress(p => ({ ...p, [file.name]: Math.min((p[file.name] || 0) + 15, 85) }));
-        }, 200);
-        const result = await fileStore.upload(noteId, file);
-        clearInterval(tickInterval);
+        const tick = setInterval(() => setProgress(p => ({ ...p, [file.name]: Math.min((p[file.name] || 5) + 12, 85) })), 250);
+        const result = await firebaseFileStore.upload(noteId, file);
+        clearInterval(tick);
         setProgress(p => ({ ...p, [file.name]: 100 }));
-        newAttachments.push(result);
+        newList.push(result);
       } catch (err) {
-        setError(`Failed to upload "${file.name}": ${err.message}`);
+        setError(`Upload failed: ${err.message}`);
         setProgress(p => { const n = { ...p }; delete n[file.name]; return n; });
       }
     }
-    onUpdate(newAttachments);
-    setUploading(false);
-    setTimeout(() => setProgress({}), 1200);
-  };
-
-  const handleFileInput = (e) => { uploadFiles(e.target.files); e.target.value = ""; };
-
-  const handleDrop = (e) => {
-    e.preventDefault(); setDragOver(false);
-    uploadFiles(e.dataTransfer.files);
+    onUpdate(newList);
+    setTimeout(() => setProgress({}), 1000);
   };
 
   const handleRemove = async (att) => {
-    try { await fileStore.remove(att.path); } catch {}
-    onUpdate((attachments || []).filter(a => a.id !== att.id));
+    try { await firebaseFileStore.remove(att.path); } catch {}
+    onUpdate(list.filter(a => a.id !== att.id));
   };
 
   return (
-    <div className="attachments-box">
-      <div className="attachments-head">
-        <div className="attachments-title">
-          <Icon d={ic.paperclip} size={14} stroke="var(--t2)" />
-          <span>Reference Documents</span>
-          {(attachments || []).length > 0 && (
-            <span className="att-count">{attachments.length}</span>
-          )}
-        </div>
-        <button className="ibtn" title="Attach file" onClick={() => fileInputRef.current?.click()}>
-          <Icon d={ic.plus} size={14} />
-        </button>
-        <input ref={fileInputRef} type="file" multiple style={{ display: "none" }}
-          accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.md,.png,.jpg,.jpeg,.gif,.webp,.zip,.json"
-          onChange={handleFileInput} />
-      </div>
+    <div style={{ position: "relative", display: "inline-flex" }} ref={popoverRef}>
+      {/* Compact trigger button */}
+      <button
+        className={`tbtn${list.length > 0 ? " on" : ""}`}
+        title="Reference documents"
+        onClick={() => { setOpen(o => !o); setError(null); }}>
+        <Icon d={ic.paperclip} size={13} />
+        {list.length > 0 && <span style={{ marginLeft: 4 }}>{list.length}</span>}
+      </button>
+      <input ref={fileInputRef} type="file" multiple style={{ display: "none" }}
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.md,.png,.jpg,.jpeg,.gif,.webp,.zip,.json"
+        onChange={e => { uploadFiles(e.target.files); e.target.value = ""; }} />
 
-      {/* Drop zone (shown when list is empty or drag is in progress) */}
-      {((attachments || []).length === 0 || dragOver) && (
-        <div
-          className={`att-dropzone${dragOver ? " over" : ""}`}
-          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}>
-          <Icon d={ic.upload} size={20} stroke={dragOver ? "var(--accent)" : "var(--t2)"} />
-          <div className="att-drop-label">{dragOver ? "Drop to attach" : "Drag files here or click to upload"}</div>
-          <div className="att-drop-sub">PDF, Word, Excel, images, and more — up to {MAX_FILE_MB} MB each</div>
-        </div>
-      )}
-
-      {/* Upload progress */}
-      {Object.entries(progress).map(([name, pct]) => (
-        <div key={name} className="attachment-row">
-          <div className="att-icon" style={{ color: "var(--accent)" }}>
-            <Icon d={ic.upload} size={15} />
+      {/* Popover */}
+      {open && (
+        <div className="att-popover">
+          <div className="att-pop-head">
+            <span className="att-pop-title">
+              <Icon d={ic.paperclip} size={13} stroke="var(--t2)" /> Reference Documents
+            </span>
+            <button className="ibtn" title="Attach file" onClick={() => fileInputRef.current?.click()}>
+              <Icon d={ic.plus} size={14} />
+            </button>
           </div>
-          <div className="attachment-main">
-            <div className="attachment-name">{name}</div>
-            <div className="att-progress-wrap">
-              <div className="att-progress-bar" style={{ width: `${pct}%` }} />
-            </div>
-          </div>
-          <span style={{ fontSize: 11, color: "var(--t2)", flexShrink: 0 }}>{pct < 100 ? `${pct}%` : "Done"}</span>
-        </div>
-      ))}
 
-      {/* Existing attachments */}
-      {(attachments || []).length > 0 && (
-        <div
-          className="attachment-list"
-          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={handleDrop}>
-          {attachments.map(att => (
-            <div key={att.id} className="attachment-row">
-              <div className="att-icon" style={{ color: fileColor(att.type, att.name) }}>
-                <Icon d={fileIcon(att.type, att.name)} size={15} />
+          {/* Upload progress items */}
+          {Object.entries(progress).map(([name, pct]) => (
+            <div key={name} className="att-row">
+              <div className="att-file-icon" style={{ color: "var(--accent)" }}>
+                <Icon d={ic.upload} size={13} />
               </div>
-              <div className="attachment-main">
-                <div className="attachment-name" title={att.name}>{att.name}</div>
-                <div className="attachment-meta">
-                  {formatSize(att.size)}{att.uploadedAt ? ` · ${formatDate(att.uploadedAt)}` : ""}
-                  {att.type && <span style={{ marginLeft: 6, opacity: 0.7 }}>{att.type.split("/")[1]?.toUpperCase()}</span>}
-                </div>
+              <div className="att-row-main">
+                <div className="att-row-name">{name}</div>
+                <div className="att-progress-wrap"><div className="att-progress-bar" style={{ width: `${pct}%` }} /></div>
               </div>
-              <div className="attachment-actions">
-                <a href={att.url} target="_blank" rel="noopener noreferrer" className="ibtn" title="Open / Download">
-                  <Icon d={ic.externalLink} size={13} />
-                </a>
-                <button className="ibtn" title="Remove" style={{ color: "var(--rose)" }}
-                  onClick={() => handleRemove(att)}>
-                  <Icon d={ic.trash} size={13} />
-                </button>
-              </div>
+              <span style={{ fontSize: 10, color: "var(--t2)" }}>{pct < 100 ? `${pct}%` : "Done"}</span>
             </div>
           ))}
-        </div>
-      )}
 
-      {error && (
-        <div style={{ padding: "8px 12px", fontSize: 12, color: "var(--rose)", display: "flex", gap: 8, alignItems: "center", borderTop: "1px solid var(--border)" }}>
-          <Icon d={ic.close} size={13} stroke="var(--rose)" />
-          {error}
-          <button onClick={() => setError(null)} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "var(--t2)", padding: 0 }}>Dismiss</button>
+          {/* File list */}
+          {list.length === 0 && Object.keys(progress).length === 0 && (
+            <div className="att-empty"
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => { e.preventDefault(); uploadFiles(e.dataTransfer.files); }}>
+              <Icon d={ic.upload} size={18} stroke="var(--t2)" />
+              <span>Click or drop files to attach</span>
+            </div>
+          )}
+
+          {list.map(att => (
+            <div key={att.id} className="att-row">
+              <div className="att-file-icon" style={{ color: fileColor(att.type, att.name) }}>
+                <Icon d={ic.file} size={13} />
+              </div>
+              <div className="att-row-main">
+                <div className="att-row-name" title={att.name}>{att.name}</div>
+                <div className="att-row-meta">{formatSize(att.size)}{att.type ? ` · ${(att.type.split("/")[1] || att.type).toUpperCase()}` : ""}</div>
+              </div>
+              <a href={att.url} target="_blank" rel="noopener noreferrer" className="ibtn" title="Open">
+                <Icon d={ic.externalLink} size={12} />
+              </a>
+              <button className="ibtn" title="Remove" style={{ color: "var(--rose)" }} onClick={() => handleRemove(att)}>
+                <Icon d={ic.trash} size={12} />
+              </button>
+            </div>
+          ))}
+
+          {error && (
+            <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "6px 10px", fontSize: 11, color: "var(--rose)", borderTop: "1px solid var(--border)" }}>
+              <Icon d={ic.close} size={11} stroke="var(--rose)" />
+              {error}
+              <button onClick={() => setError(null)} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "var(--t2)", padding: 0 }}>×</button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -2887,7 +2863,7 @@ function App() {
   const [syncStatus, setSyncStatus] = useState("idle");
   const isInitialLoad = useRef(true); // prevent saving seeds to Drive on first load
 
-  // ── Theme (light / dark) ────────────────────────────────────────────────────
+  // ── Theme (light / dark) ─────────���──────────────────────────────────────────
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem("kos_theme") || "dark"; } catch { return "dark"; }
   });
