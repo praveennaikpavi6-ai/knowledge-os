@@ -11,8 +11,20 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-storage-compat.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+  // Apply saved theme before React mounts to avoid a flash of the wrong theme
+  (function () {
+    try {
+      var t = localStorage.getItem("kos_theme") || "dark";
+      document.documentElement.setAttribute("data-theme", t);
+      document.documentElement.style.background = t === "light" ? "#f4f4f7" : "#0a0b0f";
+    } catch (e) {
+      document.documentElement.setAttribute("data-theme", "dark");
+    }
+  })();
+</script>
 </head>
-<body style="margin:0;padding:0;background:#0a0b0f">
+<body style="margin:0;padding:0">
 <div id="root"></div>
 <script type="text/babel">
 const { useState, useRef, useEffect, useCallback } = React;
@@ -189,6 +201,12 @@ const ic = {
   download: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3",
   undo: "M9 14l-4-4 4-4M5 10h11a4 4 0 010 8h-1",
   redo: "M15 14l4-4-4-4M19 10H8a4 4 0 000 8h1",
+  sun: ["M12 17a5 5 0 100-10 5 5 0 000 10z","M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"],
+  moon: "M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z",
+  paperclip: "M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48",
+  externalLink: "M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3",
+  filePdf: "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM9 13h6M9 17h4",
+  upload: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12",
 };
 
 // ── Seed data ─────────────────────────────────────────────────────────────────
@@ -323,6 +341,10 @@ function renderMD(md) {
     .replace(/\*(.+?)\*/g, "<em>$1</em>")
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/^\> (.+)$/gm, "<blockquote>$1</blockquote>")
+    .replace(/^- \[([ xX])\] (.+)$/gm, (_, mark, txt) => {
+      const done = mark.toLowerCase() === "x";
+      return `<li class="task${done ? " done" : ""}"><span class="task-check" role="checkbox" aria-checked="${done}"></span><span class="task-txt">${txt}</span></li>`;
+    })
     .replace(/^\- (.+)$/gm, "<li>$1</li>")
     .replace(/^(\d+)\. (.+)$/gm, "<li>$2</li>")
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
@@ -352,8 +374,21 @@ const CSS = `
   --glass: rgba(255,255,255,0.04); --glass-hi: rgba(255,255,255,0.08);
   --r: 12px; --rsm: 8px; --font: 'Inter',system-ui,sans-serif; --mono: 'JetBrains Mono',monospace;
   --tr: 0.18s cubic-bezier(0.4,0,0.2,1);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.4); --shadow-md: 0 8px 32px rgba(0,0,0,0.5);
 }
-body { font-family: var(--font); background: var(--bg0); color: var(--t0); height: 100vh; overflow: hidden; }
+/* ── Light theme ─────────────────────────────────────────────────────────────── */
+:root[data-theme="light"] {
+  --bg0: #f4f4f7; --bg1: #ffffff; --bg2: #ffffff; --bg3: #f0f0f4; --bg4: #e4e4ec;
+  --border: rgba(0,0,0,0.08); --border-hi: rgba(0,0,0,0.14);
+  --t0: #16161a; --t1: #3c3c46; --t2: #86868f;
+  --accent: #6a55f0; --accent2: #5b45e6; --glow: rgba(106,85,240,0.18);
+  --teal: #0891b2; --rose: #e11d48; --amber: #d97706; --emerald: #059669; --orange: #ea580c;
+  --glass: rgba(0,0,0,0.03); --glass-hi: rgba(0,0,0,0.06);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.06); --shadow-md: 0 12px 32px rgba(0,0,0,0.12);
+}
+html, body { background: var(--bg0); }
+body { font-family: var(--font); background: var(--bg0); color: var(--t0); height: 100vh; overflow: hidden; transition: background var(--tr), color var(--tr); }
+.sidebar, .explorer, .rpanel, .toolbar, .fmt-bar, .chat-hdr, .chat-inp-row, .content, .main { transition: background var(--tr), border-color var(--tr); }
 ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 99px; }
 
 /* Layout */
@@ -441,6 +476,13 @@ body { font-family: var(--font); background: var(--bg0); color: var(--t0); heigh
 .md-view td, .html-snippet-preview td { padding: 8px 13px; border: 1px solid var(--border); color: var(--t1); }
 .md-view ul, .md-view ol, .html-snippet-preview ul, .html-snippet-preview ol { padding-left: 22px; margin-bottom: 12px; }
 .md-view li, .html-snippet-preview li { margin-bottom: 4px; }
+.md-view li.task { list-style: none; display: flex; align-items: flex-start; gap: 10px; margin-left: -22px; padding: 3px 0; }
+.md-view li.task .task-check { flex-shrink: 0; width: 20px; height: 20px; margin-top: 1px; border-radius: 6px; border: 2px solid var(--border-hi); background: var(--bg3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all var(--tr); position: relative; }
+.md-view li.task .task-check:hover { border-color: var(--accent); }
+.md-view li.task .task-txt { cursor: pointer; transition: color var(--tr), opacity var(--tr); }
+.md-view li.task.done .task-check { background: var(--accent); border-color: var(--accent); }
+.md-view li.task.done .task-check::after { content: ""; width: 5px; height: 9px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg) translateY(-1px); }
+.md-view li.task.done .task-txt { color: var(--t2); text-decoration: line-through; opacity: 0.7; }
 .md-view a, .html-snippet-preview a { color: var(--accent2); }
 
 /* Dashboard */
@@ -460,12 +502,13 @@ body { font-family: var(--font); background: var(--bg0); color: var(--t0); heigh
 .sec-title { font-size: 12px; font-weight: 600; color: var(--t1); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
 .sec-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 .notes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap: 12px; margin-bottom: 26px; }
-.note-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); padding: 16px; cursor: pointer; transition: all var(--tr); }
-.note-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 4px 20px rgba(124,106,247,0.12); }
+.note-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); padding: 16px; cursor: pointer; transition: border-color var(--tr), box-shadow var(--tr), transform var(--tr); animation: cardIn .25s ease both; }
+.note-card:hover { border-color: var(--accent); transform: translateY(-3px); box-shadow: 0 8px 28px rgba(124,106,247,0.14); }
 .nc-title { font-size: 13px; font-weight: 600; color: var(--t0); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
-.nc-preview { font-size: 12px; color: var(--t2); line-height: 1.6; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
-.nc-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+.nc-preview { font-size: 12px; color: var(--t2); line-height: 1.65; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.nc-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; gap: 6px; }
 .nc-date { font-size: 10px; color: var(--t2); }
+.nc-wc { font-size: 10px; color: var(--t2); }
 .progress-bar { height: 4px; background: var(--bg4); border-radius: 99px; overflow: hidden; margin-top: 6px; }
 .progress-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg,var(--accent),var(--teal)); transition: width 0.9s cubic-bezier(0.4,0,0.2,1); }
 .graph-box { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); padding: 16px; margin-bottom: 26px; }
@@ -589,6 +632,22 @@ mark { background: rgba(124,106,247,0.3); color: var(--accent2); border-radius: 
 .attachment-meta { font-size: 11px; color: var(--t2); margin-top: 2px; }
 .attachment-actions { display: flex; gap: 4px; flex-shrink: 0; }
 .attachment-empty { padding: 14px 12px; font-size: 12px; color: var(--t2); }
+.att-count { background: var(--bg4); border: 1px solid var(--border); border-radius: 99px; font-size: 10px; font-weight: 700; padding: 1px 6px; color: var(--t2); }
+.att-icon { flex-shrink: 0; width: 32px; height: 32px; border-radius: 8px; background: var(--bg3); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; }
+.att-dropzone { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 28px 16px; cursor: pointer; transition: background var(--tr), border-color var(--tr); border: 2px dashed var(--border); border-radius: 8px; margin: 10px; text-align: center; }
+.att-dropzone:hover, .att-dropzone.over { background: rgba(124,106,247,0.07); border-color: var(--accent); }
+.att-drop-label { font-size: 13px; font-weight: 500; color: var(--t1); }
+.att-drop-sub { font-size: 11px; color: var(--t2); }
+.att-progress-wrap { height: 3px; background: var(--bg4); border-radius: 99px; margin-top: 5px; overflow: hidden; }
+.att-progress-bar { height: 100%; background: var(--accent); border-radius: 99px; transition: width 0.2s ease; }
+/* Tag filter bar */
+.tag-filter-bar { padding: 6px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.tag-filter-scroll { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.tag-filter-scroll::-webkit-scrollbar { display: none; }
+.tag-chip { flex-shrink: 0; padding: 3px 9px; border-radius: 99px; font-size: 11px; font-weight: 500; background: var(--bg3); border: 1px solid var(--border); color: var(--t2); cursor: pointer; transition: all var(--tr); white-space: nowrap; font-family: var(--font); }
+.tag-chip:hover { border-color: var(--accent); color: var(--accent2); }
+.tag-chip.active { background: rgba(124,106,247,0.15); border-color: var(--accent); color: var(--accent2); }
+
 /* Format toolbar */
 .fmt-bar { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; padding: 6px 10px; background: var(--bg2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .fmt-btn { background: none; border: none; cursor: pointer; color: var(--t2); padding: 4px 7px; border-radius: 5px; font-size: 12px; font-weight: 600; font-family: var(--font); display: flex; align-items: center; gap: 3px; transition: all var(--tr); white-space: nowrap; }
@@ -604,6 +663,16 @@ mark { background: rgba(124,106,247,0.3); color: var(--accent2); border-radius: 
 .fmt-table-opt { padding: 6px 10px; border-radius: 6px; font-size: 12px; color: var(--t1); cursor: pointer; transition: all var(--tr); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .fmt-table-opt:hover { background: var(--glass-hi); color: var(--t0); }
 .fmt-table-bar { height: 6px; background: var(--accent); border-radius: 2px; opacity: 0.55; }
+
+/* Slash command menu */
+.slash-menu { position: absolute; top: 0; left: 0; z-index: 600; background: var(--bg2); border: 1px solid var(--border-hi); border-radius: 12px; padding: 6px; min-width: 280px; box-shadow: var(--shadow-md); animation: fadeUp .14s ease; }
+.slash-menu-title { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--t2); padding: 4px 8px 6px; }
+.slash-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; cursor: pointer; transition: background var(--tr); }
+.slash-item:hover, .slash-item.sel { background: var(--glass-hi); }
+.slash-item.sel { background: rgba(124,106,247,0.14); }
+.slash-icon { width: 28px; height: 28px; border-radius: 6px; background: var(--bg3); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: var(--t1); flex-shrink: 0; font-family: var(--mono); }
+.slash-label { font-size: 13px; font-weight: 600; color: var(--t0); min-width: 100px; }
+.slash-desc { font-size: 11px; color: var(--t2); }
 
 /* Clickable table cells in preview */
 .md-view td, .md-view th, .html-snippet-preview td, .html-snippet-preview th { cursor: pointer; transition: background 0.15s; }
@@ -647,8 +716,15 @@ mark { background: rgba(124,106,247,0.3); color: var(--accent2); border-radius: 
 }
 
 @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes blink { 0%,80%,100% { opacity: 0; } 40% { opacity: 1; } }
-@keyframes pulse { 0%,100% { opacity:.4; } 50% { opacity:1; } }
+  @keyframes cardIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes blink { 0%,80%,100% { opacity: 0; } 40% { opacity: 1; } }
+  @keyframes pulse { 0%,100% { opacity:.4; } 50% { opacity:1; } }
+  .notes-grid .note-card:nth-child(1) { animation-delay: .03s; }
+  .notes-grid .note-card:nth-child(2) { animation-delay: .06s; }
+  .notes-grid .note-card:nth-child(3) { animation-delay: .09s; }
+  .notes-grid .note-card:nth-child(4) { animation-delay: .12s; }
+  .notes-grid .note-card:nth-child(5) { animation-delay: .15s; }
+  .notes-grid .note-card:nth-child(6) { animation-delay: .18s; }
 `;
 
 // ── Context Menu ──────────────────────────────────────────────────────────────
@@ -934,7 +1010,7 @@ function KnowledgeGraph({ tree, notes, onFolderClick }) {
             onMouseEnter={() => setHovered(n.id)} onMouseLeave={() => setHovered(hovered === n.id ? n.parentId : hovered)}>
             <circle cx={n.x} cy={n.y} r={n.r + 4} fill={n.color} opacity="0.08"/>
             <circle cx={n.x} cy={n.y} r={n.r} fill={n.color + "22"} stroke={n.color} strokeWidth="1.5"/>
-            <text x={n.x} y={n.y + n.r + 13} textAnchor="middle" fill="#b8bdd4" fontSize="10" fontFamily="Inter">
+            <text x={n.x} y={n.y + n.r + 13} textAnchor="middle" fill="var(--t1)" fontSize="10" fontFamily="Inter">
               {n.label.length > 13 ? n.label.slice(0, 12) + "…" : n.label}
             </text>
             {n.noteCount > 0 && (
@@ -955,11 +1031,11 @@ function KnowledgeGraph({ tree, notes, onFolderClick }) {
               <circle cx={n.x} cy={n.y} r={n.r + 4} fill={n.color} opacity={isHov ? 0.15 : 0.06} style={{transition:"opacity 0.2s"}}/>
               <circle cx={n.x} cy={n.y} r={n.r} fill={n.color + "30"} stroke={n.color} strokeWidth={isHov ? 2.5 : 1.8} style={{transition:"stroke-width 0.2s"}}/>
               {/* Note count inside circle */}
-              <text x={n.x} y={n.y + 4} textAnchor="middle" fill={isHov ? n.color : "#f0f2ff"} fontSize={n.noteCount > 9 ? "9" : "11"} fontWeight="700" fontFamily="Inter">
+              <text x={n.x} y={n.y + 4} textAnchor="middle" fill={isHov ? n.color : "var(--t0)"} fontSize={n.noteCount > 9 ? "9" : "11"} fontWeight="700" fontFamily="Inter">
                 {n.noteCount || ""}
               </text>
               {/* Label below */}
-              <text x={n.x} y={n.y + n.r + 14} textAnchor="middle" fill={isHov ? "#f0f2ff" : "#b8bdd4"} fontSize="11" fontWeight={isHov ? "600" : "400"} fontFamily="Inter" style={{transition:"fill 0.2s"}}>
+              <text x={n.x} y={n.y + n.r + 14} textAnchor="middle" fill={isHov ? "var(--t0)" : "var(--t1)"} fontSize="11" fontWeight={isHov ? "600" : "400"} fontFamily="Inter" style={{transition:"fill 0.2s"}}>
                 {n.label.length > 16 ? n.label.slice(0, 15) + "…" : n.label}
               </text>
               {/* Sub-folder count hint */}
@@ -970,7 +1046,7 @@ function KnowledgeGraph({ tree, notes, onFolderClick }) {
               )}
               {/* Click hint on hover */}
               {isHov && (
-                <text x={n.x} y={n.y + n.r + (n.children.length > 0 ? 38 : 26)} textAnchor="middle" fill="#6e7491" fontSize="9" fontFamily="Inter">
+                <text x={n.x} y={n.y + n.r + (n.children.length > 0 ? 38 : 26)} textAnchor="middle" fill="var(--t2)" fontSize="9" fontFamily="Inter">
                   click to open
                 </text>
               )}
@@ -983,12 +1059,12 @@ function KnowledgeGraph({ tree, notes, onFolderClick }) {
           onMouseEnter={() => setHovered("__hub__")} onMouseLeave={() => setHovered(null)}>
           <circle cx={cx} cy={cy} r={hubNode.r + 8} fill="url(#hubGrad)" opacity="0.12"/>
           <circle cx={cx} cy={cy} r={hubNode.r} fill="rgba(124,106,247,0.2)" stroke="#7c6af7" strokeWidth="2"/>
-          <text x={cx} y={cy - 3} textAnchor="middle" fill="#f0f2ff" fontSize="8" fontWeight="700" fontFamily="Inter">Know</text>
-          <text x={cx} y={cy + 7} textAnchor="middle" fill="#a78bfa" fontSize="8" fontWeight="700" fontFamily="Inter">ledge</text>
+          <text x={cx} y={cy - 3} textAnchor="middle" fill="var(--t0)" fontSize="8" fontWeight="700" fontFamily="Inter">Know</text>
+          <text x={cx} y={cy + 7} textAnchor="middle" fill="var(--accent2)" fontSize="8" fontWeight="700" fontFamily="Inter">ledge</text>
         </g>
 
         {/* Legend */}
-        <text x={12} y={H - 8} fill="#6e7491" fontSize="10" fontFamily="Inter">
+        <text x={12} y={H - 8} fill="var(--t2)" fontSize="10" fontFamily="Inter">
           Hover a folder to see sub-folders · Click to open
         </text>
       </svg>
@@ -1314,6 +1390,35 @@ function NoteEditor({ note, noteId, tree, onUpdate, onDelete, onToast, mobileFoc
     setTimeout(() => { ta.focus(); ta.setSelectionRange(start + prefix.length, start + prefix.length); }, 10);
   };
 
+  // ── Interactive checklists ─────────────────────────────────────────────────
+  const insertChecklist = () => insertLine("- [ ] ");
+
+  const toggleTask = (index) => {
+    let i = -1;
+    const newText = content.replace(/^(\s*)- \[([ xX])\] /gm, (m, sp, mark) => {
+      i++;
+      if (i === index) {
+        const done = mark.toLowerCase() === "x";
+        return `${sp}- [${done ? " " : "x"}] `;
+      }
+      return m;
+    });
+    setContent(newText);
+    sched(title, newText, tags, pinned, archived, color);
+  };
+
+  // Click handler for the markdown preview: toggles task checkboxes, else delegates to table editing
+  const handlePreviewClick = (e) => {
+    const chk = e.target.closest(".task-check, .task-txt");
+    if (chk) {
+      const li = chk.closest("li.task");
+      const all = [...e.currentTarget.querySelectorAll("li.task")];
+      const idx = all.indexOf(li);
+      if (idx >= 0) { toggleTask(idx); return; }
+    }
+    handleTableClick(e);
+  };
+
   const insertTable = () => {
     const tbl = "\n| Header 1 | Header 2 | Header 3 |\n|----------|----------|----------|\n| Cell 1   | Cell 2   | Cell 3   |\n| Cell 4   | Cell 5   | Cell 6   |\n";
     const ta = textareaRef.current;
@@ -1423,7 +1528,14 @@ function NoteEditor({ note, noteId, tree, onUpdate, onDelete, onToast, mobileFoc
         case 'CODE': return node.closest('pre') ? inner : `\`${inner}\``;
         case 'PRE': return `\`\`\`\n${node.textContent.trim()}\n\`\`\`\n\n`;
         case 'BLOCKQUOTE': return `> ${inner.trim()}\n\n`;
-        case 'LI': return `- ${inner.trim()}\n`;
+        case 'LI': {
+          if (node.classList && node.classList.contains('task')) {
+            const done = node.classList.contains('done') || (node.querySelector('.task-check') && node.querySelector('.task-check').getAttribute('aria-checked') === 'true');
+            const txt = (node.querySelector('.task-txt') ? node.querySelector('.task-txt').textContent : inner).trim();
+            return `- [${done ? 'x' : ' '}] ${txt}\n`;
+          }
+          return `- ${inner.trim()}\n`;
+        }
         case 'UL': case 'OL': return `${inner}\n`;
         case 'BR': return '\n';
         case 'P': case 'DIV': return inner.trim() ? `${inner.trim()}\n\n` : '';
@@ -1474,7 +1586,116 @@ function NoteEditor({ note, noteId, tree, onUpdate, onDelete, onToast, mobileFoc
           dangerouslySetInnerHTML={{ __html: content }} />
       );
     }
-    return <div className="md-view" dangerouslySetInnerHTML={{ __html: renderMD(content) }} />;
+    return <div className="md-view" onClick={handlePreviewClick} dangerouslySetInnerHTML={{ __html: renderMD(content) }} />;
+  };
+
+  // ── Slash command menu ─────────────────────────────────────────────────────
+  const [slashMenu, setSlashMenu] = useState(null); // { x, y, filter, triggerPos }
+  const slashRef = useRef(null);
+
+  const SLASH_COMMANDS = [
+    { icon: "H1", label: "Heading 1",      desc: "Large section heading",    action: () => insertLine("# ")            },
+    { icon: "H2", label: "Heading 2",      desc: "Medium section heading",   action: () => insertLine("## ")           },
+    { icon: "H3", label: "Heading 3",      desc: "Small section heading",    action: () => insertLine("### ")          },
+    { icon: "—",  label: "Divider",        desc: "Horizontal rule",          action: () => insertLine("---")           },
+    { icon: "•",  label: "Bullet list",    desc: "Unordered list",           action: () => insertLine("- ")            },
+    { icon: "1.", label: "Numbered list",  desc: "Ordered list",             action: () => insertLine("1. ")           },
+    { icon: "☑",  label: "Checklist",      desc: "Interactive to-do items",  action: insertChecklist                    },
+    { icon: ">",  label: "Quote",          desc: "Blockquote",               action: () => insertLine("> ")            },
+    { icon: "<>", label: "Code",           desc: "Inline code span",         action: () => insertFormat("`","`","code") },
+    { icon: "```",label: "Code block",     desc: "Multi-line code block",    action: () => insertFormat("```\n","\n```","code block") },
+    { icon: "⊞",  label: "Table",          desc: "3×2 markdown table",       action: insertTable                        },
+    { icon: "**", label: "Bold",           desc: "Bold text",                action: () => insertFormat("**","**","bold text") },
+    { icon: "_",  label: "Italic",         desc: "Italic text",              action: () => insertFormat("*","*","italic text") },
+  ];
+
+  const slashFiltered = slashMenu
+    ? SLASH_COMMANDS.filter(c =>
+        c.label.toLowerCase().startsWith(slashMenu.filter.toLowerCase()) ||
+        c.desc.toLowerCase().includes(slashMenu.filter.toLowerCase())
+      )
+    : [];
+  const [slashIdx, setSlashIdx] = useState(0);
+
+  const closeSlash = () => setSlashMenu(null);
+
+  const runSlashCommand = (cmd) => {
+    // Delete the slash + any typed filter text from content
+    const ta = textareaRef.current;
+    if (ta && slashMenu) {
+      const pos = ta.selectionStart;
+      const delLen = 1 + slashMenu.filter.length; // "/" + typed chars
+      const newText = content.slice(0, slashMenu.triggerPos) + content.slice(slashMenu.triggerPos + delLen);
+      setContent(newText);
+      // Set cursor before running action so insertLine/insertFormat use right position
+      ta.setSelectionRange(slashMenu.triggerPos, slashMenu.triggerPos);
+      setTimeout(() => {
+        cmd.action();
+      }, 0);
+    } else {
+      cmd.action();
+    }
+    closeSlash();
+  };
+
+  // Close slash menu on outside click
+  useEffect(() => {
+    if (!slashMenu) return;
+    const h = (e) => { if (!slashRef.current?.contains(e.target)) closeSlash(); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [slashMenu]);
+
+  const handleTextareaKeyDown = (e) => {
+    if (slashMenu) {
+      const filtered = SLASH_COMMANDS.filter(c =>
+        c.label.toLowerCase().startsWith(slashMenu.filter.toLowerCase()) ||
+        c.desc.toLowerCase().includes(slashMenu.filter.toLowerCase())
+      );
+      if (e.key === "ArrowDown") { e.preventDefault(); setSlashIdx(i => Math.min(i + 1, filtered.length - 1)); return; }
+      if (e.key === "ArrowUp")   { e.preventDefault(); setSlashIdx(i => Math.max(i - 1, 0)); return; }
+      if (e.key === "Enter" && !e.nativeEvent?.isComposing) {
+        e.preventDefault();
+        if (filtered[slashIdx]) runSlashCommand(filtered[slashIdx]);
+        return;
+      }
+      if (e.key === "Escape") { e.preventDefault(); closeSlash(); return; }
+    }
+  };
+
+  const handleTextareaChange = (e) => {
+    const val = e.target.value;
+    setContent(val);
+    sched(title, val, tags, pinned, archived, color);
+
+    // Slash command trigger
+    const pos = e.target.selectionStart;
+    const textBefore = val.slice(0, pos);
+    const lineStart = textBefore.lastIndexOf("\n") + 1;
+    const lineText = textBefore.slice(lineStart);
+    const slashMatch = lineText.match(/^\/(\w*)$/);
+    if (slashMatch) {
+      // Position the menu near the cursor
+      const ta = e.target;
+      const rect = ta.getBoundingClientRect();
+      setSlashIdx(0);
+      setSlashMenu({
+        x: rect.left + 20,
+        y: rect.top + 20,
+        filter: slashMatch[1],
+        triggerPos: lineStart,
+      });
+    } else {
+      // Update filter if already open
+      if (slashMenu) {
+        const slashMatch2 = lineText.match(/^\/(\w*)/);
+        if (slashMatch2) {
+          setSlashMenu(m => ({ ...m, filter: slashMatch2[1] }));
+        } else {
+          closeSlash();
+        }
+      }
+    }
   };
 
   const [tagInput, setTagInput] = useState(false);
@@ -1817,6 +2038,9 @@ function NoteEditor({ note, noteId, tree, onUpdate, onDelete, onToast, mobileFoc
                 <button className="fmt-btn" title="Numbered list"
                   onMouseDown={adv ? e => cmd(e,'insertOrderedList') : undefined}
                   onClick={!adv ? () => insertLine("1. ") : undefined}>1. List</button>
+                <button className="fmt-btn" title="Checklist"
+                  onMouseDown={adv ? e => ins(e, `<ul><li class="task"><span class="task-check"></span><span class="task-txt">${getSel()||'To-do item'}</span></li></ul>`) : undefined}
+                  onClick={!adv ? insertChecklist : undefined}>☑ Checklist</button>
                 <button className="fmt-btn" title="Blockquote"
                   onMouseDown={adv ? e => cmd(e,'formatBlock','blockquote') : undefined}
                   onClick={!adv ? () => insertLine("> ") : undefined}>❝ Quote</button>
@@ -1885,20 +2109,234 @@ function NoteEditor({ note, noteId, tree, onUpdate, onDelete, onToast, mobileFoc
               </div>
             ) : renderPreview()
           ) : (
-            <textarea ref={textareaRef} className="note-textarea" value={content}
-              placeholder={"Start writing…\n\nUse the toolbar above to format, or type Markdown:\n# Heading  **bold**  `code`\n- Bullet list  > Blockquote"}
-              onChange={e => { setContent(e.target.value); sched(title, e.target.value, tags, pinned, archived, color); }} />
+            <div style={{ position: "relative" }}>
+              {slashMenu && slashFiltered.length > 0 && (
+                <div ref={slashRef} className="slash-menu">
+                  <div className="slash-menu-title">Commands</div>
+                  {slashFiltered.map((cmd, i) => (
+                    <div key={cmd.label}
+                      className={`slash-item${i === slashIdx ? " sel" : ""}`}
+                      onMouseDown={e => { e.preventDefault(); runSlashCommand(cmd); }}>
+                      <span className="slash-icon">{cmd.icon}</span>
+                      <span className="slash-label">{cmd.label}</span>
+                      <span className="slash-desc">{cmd.desc}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <textarea ref={textareaRef} className="note-textarea" value={content}
+                placeholder={"Start writing…\n\nType / for commands, or use the toolbar above:\n# Heading  **bold**  `code`\n- Bullet  ☑ Checklist  > Quote"}
+                onChange={handleTextareaChange}
+                onKeyDown={handleTextareaKeyDown} />
+            </div>
           )}
         </div>
       </div>
-      <div className="word-count-bar">
-        <span>{words} words</span>
-        <span>·</span>
-        <span>{content.length} chars</span>
-        <span>·</span>
-        <span>{Math.max(1, Math.ceil(words / 200))} min read</span>
-        {!saved && <span style={{ marginLeft: "auto", color: "var(--amber)" }}>● Unsaved changes</span>}
+      {(() => {
+        const taskMatches = [...content.matchAll(/^- \[([ xX])\] /gm)];
+        const totalTasks = taskMatches.length;
+        const doneTasks = taskMatches.filter(m => m[1].toLowerCase() === "x").length;
+        return (
+          <div className="word-count-bar">
+            <span>{words} words</span>
+            <span>·</span>
+            <span>{content.length} chars</span>
+            <span>·</span>
+            <span>{Math.max(1, Math.ceil(words / 200))} min read</span>
+            {totalTasks > 0 && (
+              <>
+                <span>·</span>
+                <span style={{ color: doneTasks === totalTasks ? "var(--emerald)" : "var(--t2)" }}>
+                  {doneTasks}/{totalTasks} tasks
+                </span>
+                <div style={{ flex: 1, maxWidth: 80, height: 4, background: "var(--bg4)", borderRadius: 99, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${(doneTasks / totalTasks) * 100}%`, background: doneTasks === totalTasks ? "var(--emerald)" : "var(--accent)", borderRadius: 99, transition: "width 0.4s ease" }} />
+                </div>
+              </>
+            )}
+            {!saved && <span style={{ marginLeft: "auto", color: "var(--amber)" }}>● Unsaved</span>}
+          </div>
+        );
+      })()}
+      {/* Reference Documents */}
+      <div style={{ padding: "0 48px 32px" }}>
+        <NoteAttachments
+          noteId={noteId}
+          attachments={note?.attachments || []}
+          onUpdate={atts => onUpdate(noteId, { attachments: atts })} />
       </div>
+    </div>
+  );
+}
+
+// ── NoteAttachments ───────────────────────────────────────────────────────────
+function NoteAttachments({ noteId, attachments, onUpdate }) {
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState({}); // { filename: 0-100 }
+  const [dragOver, setDragOver] = useState(false);
+  const [error, setError] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const MAX_FILE_MB = 50;
+
+  const fileIcon = (type, name) => {
+    const ext = (name || "").split(".").pop().toLowerCase();
+    if (type.startsWith("image/")) return ic.file;
+    if (ext === "pdf" || type === "application/pdf") return ic.filePdf;
+    return ic.file;
+  };
+
+  const fileColor = (type, name) => {
+    const ext = (name || "").split(".").pop().toLowerCase();
+    if (type && type.startsWith("image/")) return "var(--emerald)";
+    if (ext === "pdf") return "var(--rose)";
+    if (["docx","doc","odt"].includes(ext)) return "var(--accent)";
+    if (["xlsx","xls","csv"].includes(ext)) return "var(--emerald)";
+    if (["pptx","ppt"].includes(ext)) return "var(--orange)";
+    return "var(--teal)";
+  };
+
+  const formatSize = (bytes) => {
+    if (!bytes) return "";
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  };
+
+  const formatDate = (iso) => {
+    if (!iso) return "";
+    try { return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); } catch { return ""; }
+  };
+
+  const uploadFiles = async (files) => {
+    if (!files || files.length === 0) return;
+    setError(null);
+    const oversized = [...files].find(f => f.size > MAX_FILE_MB * 1024 * 1024);
+    if (oversized) { setError(`"${oversized.name}" exceeds the ${MAX_FILE_MB} MB limit.`); return; }
+
+    setUploading(true);
+    const newAttachments = [...(attachments || [])];
+    for (const file of [...files]) {
+      setProgress(p => ({ ...p, [file.name]: 0 }));
+      try {
+        // Simulate progress ticks while uploading
+        const tickInterval = setInterval(() => {
+          setProgress(p => ({ ...p, [file.name]: Math.min((p[file.name] || 0) + 15, 85) }));
+        }, 200);
+        const result = await fileStore.upload(noteId, file);
+        clearInterval(tickInterval);
+        setProgress(p => ({ ...p, [file.name]: 100 }));
+        newAttachments.push(result);
+      } catch (err) {
+        setError(`Failed to upload "${file.name}": ${err.message}`);
+        setProgress(p => { const n = { ...p }; delete n[file.name]; return n; });
+      }
+    }
+    onUpdate(newAttachments);
+    setUploading(false);
+    setTimeout(() => setProgress({}), 1200);
+  };
+
+  const handleFileInput = (e) => { uploadFiles(e.target.files); e.target.value = ""; };
+
+  const handleDrop = (e) => {
+    e.preventDefault(); setDragOver(false);
+    uploadFiles(e.dataTransfer.files);
+  };
+
+  const handleRemove = async (att) => {
+    try { await fileStore.remove(att.path); } catch {}
+    onUpdate((attachments || []).filter(a => a.id !== att.id));
+  };
+
+  return (
+    <div className="attachments-box">
+      <div className="attachments-head">
+        <div className="attachments-title">
+          <Icon d={ic.paperclip} size={14} stroke="var(--t2)" />
+          <span>Reference Documents</span>
+          {(attachments || []).length > 0 && (
+            <span className="att-count">{attachments.length}</span>
+          )}
+        </div>
+        <button className="ibtn" title="Attach file" onClick={() => fileInputRef.current?.click()}>
+          <Icon d={ic.plus} size={14} />
+        </button>
+        <input ref={fileInputRef} type="file" multiple style={{ display: "none" }}
+          accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.md,.png,.jpg,.jpeg,.gif,.webp,.zip,.json"
+          onChange={handleFileInput} />
+      </div>
+
+      {/* Drop zone (shown when list is empty or drag is in progress) */}
+      {((attachments || []).length === 0 || dragOver) && (
+        <div
+          className={`att-dropzone${dragOver ? " over" : ""}`}
+          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}>
+          <Icon d={ic.upload} size={20} stroke={dragOver ? "var(--accent)" : "var(--t2)"} />
+          <div className="att-drop-label">{dragOver ? "Drop to attach" : "Drag files here or click to upload"}</div>
+          <div className="att-drop-sub">PDF, Word, Excel, images, and more — up to {MAX_FILE_MB} MB each</div>
+        </div>
+      )}
+
+      {/* Upload progress */}
+      {Object.entries(progress).map(([name, pct]) => (
+        <div key={name} className="attachment-row">
+          <div className="att-icon" style={{ color: "var(--accent)" }}>
+            <Icon d={ic.upload} size={15} />
+          </div>
+          <div className="attachment-main">
+            <div className="attachment-name">{name}</div>
+            <div className="att-progress-wrap">
+              <div className="att-progress-bar" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+          <span style={{ fontSize: 11, color: "var(--t2)", flexShrink: 0 }}>{pct < 100 ? `${pct}%` : "Done"}</span>
+        </div>
+      ))}
+
+      {/* Existing attachments */}
+      {(attachments || []).length > 0 && (
+        <div
+          className="attachment-list"
+          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}>
+          {attachments.map(att => (
+            <div key={att.id} className="attachment-row">
+              <div className="att-icon" style={{ color: fileColor(att.type, att.name) }}>
+                <Icon d={fileIcon(att.type, att.name)} size={15} />
+              </div>
+              <div className="attachment-main">
+                <div className="attachment-name" title={att.name}>{att.name}</div>
+                <div className="attachment-meta">
+                  {formatSize(att.size)}{att.uploadedAt ? ` · ${formatDate(att.uploadedAt)}` : ""}
+                  {att.type && <span style={{ marginLeft: 6, opacity: 0.7 }}>{att.type.split("/")[1]?.toUpperCase()}</span>}
+                </div>
+              </div>
+              <div className="attachment-actions">
+                <a href={att.url} target="_blank" rel="noopener noreferrer" className="ibtn" title="Open / Download">
+                  <Icon d={ic.externalLink} size={13} />
+                </a>
+                <button className="ibtn" title="Remove" style={{ color: "var(--rose)" }}
+                  onClick={() => handleRemove(att)}>
+                  <Icon d={ic.trash} size={13} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {error && (
+        <div style={{ padding: "8px 12px", fontSize: 12, color: "var(--rose)", display: "flex", gap: 8, alignItems: "center", borderTop: "1px solid var(--border)" }}>
+          <Icon d={ic.close} size={13} stroke="var(--rose)" />
+          {error}
+          <button onClick={() => setError(null)} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "var(--t2)", padding: 0 }}>Dismiss</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -2043,54 +2481,129 @@ function AIAssistant({ notes }) {
 
 // ── GlobalSearch ──────────────────────────────────────────────────────────────
 function GlobalSearch({ notes, tree, onOpenNote }) {
-  const [q, setQ] = useState(""), [filter, setFilter] = useState("all");
+  const [q, setQ] = useState(""), [filter, setFilter] = useState("all"), [tagFilter, setTagFilter] = useState(null);
+  const inputRef = React.useRef(null);
   const all = flattenTree(tree);
-  const hl = t => q.trim() ? t.replace(new RegExp(`(${q.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi"), "<mark>$1</mark>") : t;
+
+  const allTags = [...new Set(Object.values(notes || {}).flatMap(n => n.tags || []))].sort();
+
+  const hl = t => q.trim()
+    ? t.replace(new RegExp(`(${q.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi"), "<mark>$1</mark>")
+    : t;
+
+  // Smart snippet: find the sentence/window around the first match
+  const snippet = (content, maxLen = 240) => {
+    const clean = (content || "").replace(/[#*`>~\[\]]/g, "").replace(/\n+/g, " ").trim();
+    if (!q.trim()) return clean.slice(0, maxLen);
+    const idx = clean.toLowerCase().indexOf(q.toLowerCase());
+    if (idx === -1) return clean.slice(0, maxLen);
+    const start = Math.max(0, idx - 80);
+    const end = Math.min(clean.length, idx + maxLen - 80);
+    return (start > 0 ? "…" : "") + clean.slice(start, end) + (end < clean.length ? "…" : "");
+  };
+
   const results = q.trim().length < 2 ? [] : all.filter(n => {
     const note = notes[n.id];
-    const match = n.label.toLowerCase().includes(q.toLowerCase()) || (note && ((note.content || "").toLowerCase().includes(q.toLowerCase()) || (note.tags || []).join(" ").toLowerCase().includes(q.toLowerCase())));
-    if (!match) return false;
+    const matchQ = n.label.toLowerCase().includes(q.toLowerCase()) ||
+      (note && ((note.content || "").toLowerCase().includes(q.toLowerCase()) ||
+        (note.tags || []).join(" ").toLowerCase().includes(q.toLowerCase())));
+    if (!matchQ) return false;
     if (filter === "pinned") return note?.pinned;
     if (filter === "archived") return note?.archived;
     if (filter === "notes") return n.type === "note";
     if (filter === "folders") return n.type === "folder";
+    if (tagFilter) return (note?.tags || []).includes(tagFilter);
     return true;
-  }).slice(0, 15);
+  }).slice(0, 20);
+
+  // Keyboard shortcut: focus search on Ctrl/Cmd+K (already wired in App, but autofocus on mount too)
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
   return (
-    <div className="content" style={{ paddingTop: 28 }}>
+    <div className="content" style={{ paddingTop: 28, maxWidth: 720 }}>
       <div style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 20, fontWeight: 700, color: "var(--t0)", marginBottom: 4 }}>Global Search</div>
-        <div style={{ fontSize: 13, color: "var(--t2)" }}>Search all notes, folders, tags and content</div>
+        <div style={{ fontSize: 22, fontWeight: 700, color: "var(--t0)", letterSpacing: "-0.4px", marginBottom: 4 }}>Search</div>
+        <div style={{ fontSize: 13, color: "var(--t2)" }}>Search across all notes, folders, tags and content</div>
       </div>
-      <div className="sbar">
+
+      {/* Search bar */}
+      <div className="sbar" style={{ marginBottom: 12 }}>
         <Icon d={ic.search} size={18} stroke="var(--t2)" />
-        <input className="sinput" placeholder="Search anything…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
-        {q && <div style={{ cursor: "pointer" }} onClick={() => setQ("")}><Icon d={ic.close} size={16} stroke="var(--t2)" /></div>}
+        <input ref={inputRef} className="sinput" placeholder="Search anything… (Ctrl+K)" value={q} onChange={e => setQ(e.target.value)} />
+        {q && <button style={{ background:"none",border:"none",cursor:"pointer",padding:0,display:"flex" }} onClick={() => setQ("")}><Icon d={ic.close} size={16} stroke="var(--t2)" /></button>}
       </div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+
+      {/* Filter row */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
         {["all", "notes", "folders", "pinned", "archived"].map(f => (
-          <button key={f} className={`tbtn${filter === f ? " on" : ""}`} onClick={() => setFilter(f)} style={{ fontSize: 12, padding: "4px 10px" }}>
+          <button key={f} className={`tag-chip${filter === f ? " active" : ""}`} onClick={() => setFilter(f)}>
             {f.charAt(0).toUpperCase() + f.slice(1)}
           </button>
         ))}
-        {q.trim().length >= 2 && <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--t2)", alignSelf: "center" }}>{results.length} result{results.length !== 1 ? "s" : ""}</span>}
+        {q.trim().length >= 2 && (
+          <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--t2)" }}>
+            {results.length} result{results.length !== 1 ? "s" : ""}
+          </span>
+        )}
       </div>
-      {results.map(node => (
-        <div key={node.id} className="sresult" onClick={() => node.type === "note" && onOpenNote(node.id)}>
-          <div className="sric"><Icon d={node.type === "folder" ? ic.folder : ic.file} size={15} stroke={node.type === "folder" ? "var(--amber)" : "var(--teal)"} /></div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="sr-title" dangerouslySetInnerHTML={{ __html: hl(node.label) }} />
-            <div className="sr-path">{node.path.join(" › ")}</div>
-            {notes[node.id] && <div className="sr-prev" dangerouslySetInnerHTML={{ __html: hl((notes[node.id].content || "").replace(/[#*`>]/g, "").slice(0, 220)) }} />}
-          </div>
-          {notes[node.id]?.pinned && <Icon d={ic.pin} size={12} fill="var(--rose)" stroke="var(--rose)" />}
+
+      {/* Tag chips */}
+      {allTags.length > 0 && (
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 16 }}>
+          {allTags.map(t => (
+            <button key={t} className={`tag-chip${tagFilter === t ? " active" : ""}`}
+              onClick={() => setTagFilter(tf => tf === t ? null : t)}>
+              #{t}
+            </button>
+          ))}
         </div>
-      ))}
+      )}
+
+      {/* Results */}
+      {results.map(node => {
+        const note = notes[node.id];
+        return (
+          <div key={node.id} className="sresult" onClick={() => node.type === "note" && onOpenNote(node.id)}>
+            <div className="sric">
+              <Icon d={node.type === "folder" ? ic.folder : ic.file} size={15}
+                stroke={node.type === "folder" ? "var(--amber)" : "var(--teal)"} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                <div className="sr-title" dangerouslySetInnerHTML={{ __html: hl(node.label) }} />
+                {note?.pinned && <Icon d={ic.pin} size={11} fill="var(--rose)" stroke="var(--rose)" />}
+                {(note?.tags || []).map(t => (
+                  <span key={t} className="badge badge-teal" style={{ fontSize: 10 }}>{t}</span>
+                ))}
+              </div>
+              <div className="sr-path">{node.path.join(" › ")}</div>
+              {note && (
+                <div className="sr-prev" dangerouslySetInnerHTML={{ __html: hl(snippet(note.content)) }} />
+              )}
+              {note && (
+                <div style={{ display: "flex", gap: 10, marginTop: 4, fontSize: 10, color: "var(--t2)" }}>
+                  {note.updated && <span>Updated {note.updated}</span>}
+                  {note.wordCount > 0 && <span>{note.wordCount} words</span>}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
       {q.trim().length >= 2 && results.length === 0 && (
         <div className="empty-state">
           <div className="empty-ic"><Icon d={ic.search} size={22} stroke="var(--t2)" /></div>
-          <div className="empty-title">No results for "{q}"</div>
-          <div className="empty-sub">Try different keywords or check the filter</div>
+          <div className="empty-title">No results for &ldquo;{q}&rdquo;</div>
+          <div className="empty-sub">Try different keywords, remove filters, or check spelling</div>
+        </div>
+      )}
+
+      {q.trim().length < 2 && (
+        <div className="empty-state" style={{ paddingTop: 40 }}>
+          <div className="empty-ic"><Icon d={ic.search} size={22} stroke="var(--t2)" /></div>
+          <div className="empty-title">Type to search</div>
+          <div className="empty-sub">Search across titles, content, and tags. Use filters to narrow down.</div>
         </div>
       )}
     </div>
@@ -2109,10 +2622,13 @@ function Favorites({ notes, onOpenNote }) {
       ) : (
         <div className="notes-grid">
           {pinned.map(([id, note]) => (
-            <div key={id} className="note-card" onClick={() => onOpenNote(id)} style={{ borderColor: "rgba(244,114,182,0.3)", borderLeft: note.color ? `3px solid ${note.color}` : undefined }}>
+            <div key={id} className="note-card" onClick={() => onOpenNote(id)} style={{ borderLeft: note.color ? `3px solid ${note.color}` : "3px solid var(--rose)" }}>
               <div className="nc-title"><Icon d={ic.pin} size={11} fill="var(--rose)" stroke="var(--rose)" />{note.title}</div>
-              <div className="nc-preview">{(note.content || "").replace(/[#*`>]/g, "").trim()}</div>
-              <div className="nc-footer"><div className="nc-date">{note.updated}</div></div>
+              <div className="nc-preview">{(note.content || "").replace(/[#*`>~\[\]]/g, "").trim()}</div>
+              <div className="nc-footer">
+                <div className="nc-date">{note.updated}</div>
+                {(note.tags || []).length > 0 && <div style={{ display:"flex", gap:3 }}>{note.tags.slice(0,2).map(t => <span key={t} className="badge badge-teal">{t}</span>)}</div>}
+              </div>
             </div>
           ))}
         </div>
@@ -2132,10 +2648,13 @@ function Recent({ notes, onOpenNote }) {
         {sorted.map(([id, note]) => (
           <div key={id} className="note-card" onClick={() => onOpenNote(id)} style={{ borderLeft: note.color ? `3px solid ${note.color}` : undefined }}>
             <div className="nc-title">{note.pinned && <Icon d={ic.pin} size={11} fill="var(--rose)" stroke="var(--rose)" />}{note.title}</div>
-            <div className="nc-preview">{(note.content || "").replace(/[#*`>]/g, "").trim()}</div>
+            <div className="nc-preview">{(note.content || "").replace(/[#*`>~\[\]]/g, "").trim()}</div>
             <div className="nc-footer">
               <div className="nc-date">{note.updated}</div>
-              <div style={{ display: "flex", gap: 3 }}>{(note.tags || []).slice(0, 2).map(t => <span key={t} className="badge badge-teal">{t}</span>)}</div>
+              <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+                {note.wordCount > 0 && <span className="nc-wc">{note.wordCount}w</span>}
+                {(note.tags || []).slice(0, 2).map(t => <span key={t} className="badge badge-teal">{t}</span>)}
+              </div>
             </div>
           </div>
         ))}
@@ -2367,6 +2886,17 @@ function App() {
 
   const [syncStatus, setSyncStatus] = useState("idle");
   const isInitialLoad = useRef(true); // prevent saving seeds to Drive on first load
+
+  // ── Theme (light / dark) ────────────────────────────────────────────────────
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem("kos_theme") || "dark"; } catch { return "dark"; }
+  });
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    document.documentElement.style.background = theme === "light" ? "#f4f4f7" : "#0a0b0f";
+    try { localStorage.setItem("kos_theme", theme); } catch {}
+  }, [theme]);
+  const toggleTheme = () => setTheme(t => (t === "light" ? "dark" : "light"));
 
   // ── Load: Firebase first → localStorage → seeds (READ ONLY) ───────────
   useEffect(() => {
@@ -2618,6 +3148,7 @@ function App() {
   }, []); // empty deps — ref always current, no stale closure
 
   const [folderView, setFolderView] = useState(null); // { id, label } of clicked folder
+  const [activeTag, setActiveTag] = useState(null); // tag filter for explorer
 
   const handleMoveRef = useRef(null);
   const handleMove = (dragId, targetFolderId) => {
@@ -2827,6 +3358,10 @@ function App() {
               <Icon d={ic.plus} size={15} />
               <span className="nav-label">New Note</span>
             </button>
+            <button className="stoggle" onClick={toggleTheme} title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}>
+              <Icon d={theme === "light" ? ic.moon : ic.sun} size={15} />
+              <span className="nav-label" style={{ fontSize: 12, marginLeft: 8 }}>{theme === "light" ? "Dark mode" : "Light mode"}</span>
+            </button>
             <button className="stoggle" onClick={() => setSideCollapsed(c => !c)}>
               <Icon d={sideCollapsed ? ic.chevronRight : ic.menu} size={15} />
             </button>
@@ -2842,23 +3377,58 @@ function App() {
               <button className="ibtn" onClick={() => setShowNewFolder(true)} title="New folder"><Icon d={ic.folderPlus} size={15} /></button>
             </div>
           </div>
+          {/* Tag filter bar */}
+          {(() => {
+            const allTags = [...new Set(Object.values(notes || {}).flatMap(n => n.tags || []))].sort();
+            if (!allTags.length) return null;
+            return (
+              <div className="tag-filter-bar">
+                <div className="tag-filter-scroll">
+                  <button className={`tag-chip${!activeTag ? " active" : ""}`} onClick={() => setActiveTag(null)}>All</button>
+                  {allTags.map(t => (
+                    <button key={t} className={`tag-chip${activeTag === t ? " active" : ""}`} onClick={() => setActiveTag(at => at === t ? null : t)}>{t}</button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
           <div className="tree-wrap">
-            {tree.map(node => (
-              <TreeNode key={node.id} node={node} depth={0} selId={selId}
-                onSelect={n => {
-                  if (n._pin) { updateNote(n.id, { pinned: !notes[n.id]?.pinned }); showToast(notes[n.id]?.pinned ? "Unpinned" : "Pinned", ic.pin); return; }
-                  setSelId(n.id); setFolderView(null);
-                  if (notes[n.id]) { setOpenNote(n.id); setActiveNav("knowledge"); setMobileNoteFocus(true); }
-                }}
-                onToggle={id => setTree(t => toggleExpand(t, id))}
-                onRename={renameItem}
-                onDelete={handleTreeDelete}
-                onNewNote={handleTreeNewNote}
-                onNewFolder={handleTreeNewFolder}
-                onMove={handleMove}
-                onFolderClick={handleFolderClick}
-                dropTargetId={dropTargetId} />
-            ))}
+            {activeTag ? (
+              // Tag-filtered flat list of notes
+              (() => {
+                const tagged = Object.entries(notes || {})
+                  .filter(([_, n]) => (n.tags || []).includes(activeTag) && !n.archived)
+                  .sort((a, b) => (b[1].updated || "").localeCompare(a[1].updated || ""));
+                return tagged.length === 0 ? (
+                  <div style={{ padding: "18px 10px", fontSize: 12, color: "var(--t2)", textAlign: "center" }}>No notes tagged "{activeTag}"</div>
+                ) : tagged.map(([id, note]) => (
+                  <div key={id}
+                    className={`tree-row${selId === id ? " sel" : ""}`}
+                    onClick={() => { setSelId(id); setFolderView(null); setOpenNote(id); setActiveNav("knowledge"); setMobileNoteFocus(true); }}>
+                    <Icon d={ic.file} size={13} stroke="var(--teal)" style={{ flexShrink: 0 }} />
+                    <span className="tree-lbl">{note.title || "Untitled"}</span>
+                    {note.pinned && <Icon d={ic.pin} size={10} fill="var(--rose)" stroke="var(--rose)" />}
+                  </div>
+                ));
+              })()
+            ) : (
+              tree.map(node => (
+                <TreeNode key={node.id} node={node} depth={0} selId={selId}
+                  onSelect={n => {
+                    if (n._pin) { updateNote(n.id, { pinned: !notes[n.id]?.pinned }); showToast(notes[n.id]?.pinned ? "Unpinned" : "Pinned", ic.pin); return; }
+                    setSelId(n.id); setFolderView(null);
+                    if (notes[n.id]) { setOpenNote(n.id); setActiveNav("knowledge"); setMobileNoteFocus(true); }
+                  }}
+                  onToggle={id => setTree(t => toggleExpand(t, id))}
+                  onRename={renameItem}
+                  onDelete={handleTreeDelete}
+                  onNewNote={handleTreeNewNote}
+                  onNewFolder={handleTreeNewFolder}
+                  onMove={handleMove}
+                  onFolderClick={handleFolderClick}
+                  dropTargetId={dropTargetId} />
+              ))
+            )}
           </div>
         </div>
 
