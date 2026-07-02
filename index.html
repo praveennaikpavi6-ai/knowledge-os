@@ -337,6 +337,10 @@ function renderMD(md) {
     .replace(/\*(.+?)\*/g, "<em>$1</em>")
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/^\> (.+)$/gm, "<blockquote>$1</blockquote>")
+    .replace(/^- \[([ xX])\] (.+)$/gm, (_, mark, txt) => {
+      const done = mark.toLowerCase() === "x";
+      return `<li class="task${done ? " done" : ""}"><span class="task-check" role="checkbox" aria-checked="${done}"></span><span class="task-txt">${txt}</span></li>`;
+    })
     .replace(/^\- (.+)$/gm, "<li>$1</li>")
     .replace(/^(\d+)\. (.+)$/gm, "<li>$2</li>")
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
@@ -468,6 +472,13 @@ body { font-family: var(--font); background: var(--bg0); color: var(--t0); heigh
 .md-view td, .html-snippet-preview td { padding: 8px 13px; border: 1px solid var(--border); color: var(--t1); }
 .md-view ul, .md-view ol, .html-snippet-preview ul, .html-snippet-preview ol { padding-left: 22px; margin-bottom: 12px; }
 .md-view li, .html-snippet-preview li { margin-bottom: 4px; }
+.md-view li.task { list-style: none; display: flex; align-items: flex-start; gap: 10px; margin-left: -22px; padding: 3px 0; }
+.md-view li.task .task-check { flex-shrink: 0; width: 20px; height: 20px; margin-top: 1px; border-radius: 6px; border: 2px solid var(--border-hi); background: var(--bg3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all var(--tr); position: relative; }
+.md-view li.task .task-check:hover { border-color: var(--accent); }
+.md-view li.task .task-txt { cursor: pointer; transition: color var(--tr), opacity var(--tr); }
+.md-view li.task.done .task-check { background: var(--accent); border-color: var(--accent); }
+.md-view li.task.done .task-check::after { content: ""; width: 5px; height: 9px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg) translateY(-1px); }
+.md-view li.task.done .task-txt { color: var(--t2); text-decoration: line-through; opacity: 0.7; }
 .md-view a, .html-snippet-preview a { color: var(--accent2); }
 
 /* Dashboard */
@@ -1341,6 +1352,35 @@ function NoteEditor({ note, noteId, tree, onUpdate, onDelete, onToast, mobileFoc
     setTimeout(() => { ta.focus(); ta.setSelectionRange(start + prefix.length, start + prefix.length); }, 10);
   };
 
+  // ── Interactive checklists ─────────────────────────────────────────────────
+  const insertChecklist = () => insertLine("- [ ] ");
+
+  const toggleTask = (index) => {
+    let i = -1;
+    const newText = content.replace(/^(\s*)- \[([ xX])\] /gm, (m, sp, mark) => {
+      i++;
+      if (i === index) {
+        const done = mark.toLowerCase() === "x";
+        return `${sp}- [${done ? " " : "x"}] `;
+      }
+      return m;
+    });
+    setContent(newText);
+    sched(title, newText, tags, pinned, archived, color);
+  };
+
+  // Click handler for the markdown preview: toggles task checkboxes, else delegates to table editing
+  const handlePreviewClick = (e) => {
+    const chk = e.target.closest(".task-check, .task-txt");
+    if (chk) {
+      const li = chk.closest("li.task");
+      const all = [...e.currentTarget.querySelectorAll("li.task")];
+      const idx = all.indexOf(li);
+      if (idx >= 0) { toggleTask(idx); return; }
+    }
+    handleTableClick(e);
+  };
+
   const insertTable = () => {
     const tbl = "\n| Header 1 | Header 2 | Header 3 |\n|----------|----------|----------|\n| Cell 1   | Cell 2   | Cell 3   |\n| Cell 4   | Cell 5   | Cell 6   |\n";
     const ta = textareaRef.current;
@@ -1450,7 +1490,14 @@ function NoteEditor({ note, noteId, tree, onUpdate, onDelete, onToast, mobileFoc
         case 'CODE': return node.closest('pre') ? inner : `\`${inner}\``;
         case 'PRE': return `\`\`\`\n${node.textContent.trim()}\n\`\`\`\n\n`;
         case 'BLOCKQUOTE': return `> ${inner.trim()}\n\n`;
-        case 'LI': return `- ${inner.trim()}\n`;
+        case 'LI': {
+          if (node.classList && node.classList.contains('task')) {
+            const done = node.classList.contains('done') || (node.querySelector('.task-check') && node.querySelector('.task-check').getAttribute('aria-checked') === 'true');
+            const txt = (node.querySelector('.task-txt') ? node.querySelector('.task-txt').textContent : inner).trim();
+            return `- [${done ? 'x' : ' '}] ${txt}\n`;
+          }
+          return `- ${inner.trim()}\n`;
+        }
         case 'UL': case 'OL': return `${inner}\n`;
         case 'BR': return '\n';
         case 'P': case 'DIV': return inner.trim() ? `${inner.trim()}\n\n` : '';
@@ -1501,7 +1548,7 @@ function NoteEditor({ note, noteId, tree, onUpdate, onDelete, onToast, mobileFoc
           dangerouslySetInnerHTML={{ __html: content }} />
       );
     }
-    return <div className="md-view" dangerouslySetInnerHTML={{ __html: renderMD(content) }} />;
+    return <div className="md-view" onClick={handlePreviewClick} dangerouslySetInnerHTML={{ __html: renderMD(content) }} />;
   };
 
   const [tagInput, setTagInput] = useState(false);
@@ -1844,6 +1891,9 @@ function NoteEditor({ note, noteId, tree, onUpdate, onDelete, onToast, mobileFoc
                 <button className="fmt-btn" title="Numbered list"
                   onMouseDown={adv ? e => cmd(e,'insertOrderedList') : undefined}
                   onClick={!adv ? () => insertLine("1. ") : undefined}>1. List</button>
+                <button className="fmt-btn" title="Checklist"
+                  onMouseDown={adv ? e => ins(e, `<ul><li class="task"><span class="task-check"></span><span class="task-txt">${getSel()||'To-do item'}</span></li></ul>`) : undefined}
+                  onClick={!adv ? insertChecklist : undefined}>☑ Checklist</button>
                 <button className="fmt-btn" title="Blockquote"
                   onMouseDown={adv ? e => cmd(e,'formatBlock','blockquote') : undefined}
                   onClick={!adv ? () => insertLine("> ") : undefined}>❝ Quote</button>
